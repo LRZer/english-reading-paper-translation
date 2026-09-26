@@ -21,7 +21,7 @@ On Windows, you can also double-click `启动阅读与翻译.cmd` after installi
 
 - Separate article and paper libraries, both with folders.
 - Select words while reading, record Chinese meanings and notes, and underline saved words and common inflections in the article.
-- Switch the reading sidebar to an article-aware AI assistant for follow-up questions. Choose DeepSeek Flash or V4 Pro, turn thinking on or off, set reasoning effort, and inspect the returned reasoning when enabled. Each article can have multiple saved conversations; reopen an old conversation or start a new one.
+- Switch the reading sidebar to an article-aware AI assistant. It opens on the current article's conversation list, where you can resume a saved chat or start a new one. Model and thinking controls sit inside the question composer; choose DeepSeek Flash or V4 Pro, set reasoning effort, and inspect returned reasoning when enabled. Conversations remain separate for each article.
 - Read the original PDF in the browser's built-in viewer on the left and the full translation on the right. Multiple papers can be translated concurrently, and results are saved even if you leave the current paper.
 - Separate DeepSeek prompts for articles and papers. Enter an API key in Settings and test the connection. The key is stored only in this browser's local storage, not in project files or data exports.
 - Adjust the reading background, font size, line spacing, page margins, and dictionary font size.

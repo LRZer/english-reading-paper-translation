@@ -43,6 +43,7 @@
   const assistantSessions = new Map();
   const assistantSaveChains = new Map();
   let rightPaneMode = 'vocabulary';
+  let lastAssistantArticleId = null;
   const usageIsForeground=()=>document.visibilityState==='visible'&&document.hasFocus();
   let usageStartedAt = usageIsForeground() ? Date.now() : null;
   const app = $('#app');
@@ -346,6 +347,8 @@
     removeSelection(); activeWord=null; draft=null;
     const parts=location.hash.slice(1).split('/'); route={name:parts[0]||'home',id:parts.slice(1).join('/')};
     if (!['home','articles','papers','vocabulary','data','study'].includes(route.name)) route.name='home';
+    if(route.name!=='study')lastAssistantArticleId=null;
+    else if(lastAssistantArticleId!==route.id){assistantArticleState(route.id).view='list';lastAssistantArticleId=route.id;}
     document.querySelectorAll('[data-nav]').forEach(a=>a.classList.toggle('active',a.dataset.nav===(route.name==='study'?'articles':route.name)));
     document.documentElement.style.setProperty('--left-width',`${data.preferences.split}%`);
     document.documentElement.style.setProperty('--reading-size',`${data.preferences.fontSize}px`);
@@ -570,10 +573,9 @@
   document.addEventListener('change',e=>{
     if(e.target.matches('[data-font-target]'))updateFont(e.target,true);if(e.target.matches('[data-padding-target]'))updatePadding(e.target,true);if(e.target.matches('[data-line-height]'))updateLineHeight(e.target,true);
     if(e.target.id==='settings-language'){data.preferences.language=I18N.supported(e.target.value);apiConnectionStatus=deepseekApiKey?t('apiKeyReady'):t('apiKeyEmpty');persist();render();}
-    if(e.target.id==='assistant-model'){data.preferences.assistantModel=e.target.value;persist();}
-    if(e.target.id==='assistant-thinking'){data.preferences.assistantThinking=e.target.checked;persist();$('#assistant-effort').disabled=!e.target.checked;}
-    if(e.target.id==='assistant-effort'){data.preferences.assistantEffort=e.target.value;persist();}
-    if(e.target.id==='assistant-conversation-select'){const state=assistantArticleState(route.id);if(state.conversations.some(item=>item.id===e.target.value)){state.activeId=e.target.value;renderAssistantPane();}}
+    if(e.target.id==='assistant-model'){data.preferences.assistantModel=e.target.value;persist();$('.assistant-model-caption').textContent=assistantModelCaption();}
+    if(e.target.id==='assistant-thinking'){data.preferences.assistantThinking=e.target.checked;persist();$('#assistant-effort').disabled=!e.target.checked;$('.assistant-model-caption').textContent=assistantModelCaption();}
+    if(e.target.id==='assistant-effort'){data.preferences.assistantEffort=e.target.value;persist();$('.assistant-model-caption').textContent=assistantModelCaption();}
     if(e.target.matches('[data-move-article]')){const article=data.articles.find(item=>item.id===e.target.dataset.moveArticle);if(article){article.folderId=folderFor('article',e.target.value)?.id||null;article.updatedAt=new Date().toISOString();persist();render();toast('文章已移动');}}
     if(e.target.matches('[data-move-paper]')){movePaperToFolder(e.target.dataset.movePaper,e.target.value).then(()=>{if(route.name==='papers'&&!route.id.startsWith('open/'))render();toast('论文已移动');}).catch(()=>toast('论文移动失败'));}
   });
@@ -810,7 +812,7 @@
     root.innerHTML=studyWordList(words);localizeDOM(root);
   }
   function assistantArticleState(articleId){
-    if(!assistantSessions.has(articleId))assistantSessions.set(articleId,{conversations:[],activeId:null,loaded:false,loading:null});
+    if(!assistantSessions.has(articleId))assistantSessions.set(articleId,{conversations:[],activeId:null,view:'list',loaded:false,loading:null});
     return assistantSessions.get(articleId);
   }
   function normalizeAssistantConversation(record,articleId){
@@ -824,22 +826,34 @@
       if(assistantSessions.get(articleId)!==state)return;
       if(!data.articles.some(item=>item.id===articleId))return;
       state.conversations=records.map(record=>normalizeAssistantConversation(record,articleId)).filter(Boolean).sort((left,right)=>right.updatedAt.localeCompare(left.updatedAt));
-      if(!state.conversations.length){const now=new Date().toISOString(),conversation={id:uid(),articleId,createdAt:now,updatedAt:now,turns:[],busy:false,draft:''};state.conversations.push(conversation);saveAssistantConversation(conversation);}
-      state.activeId=state.conversations[0].id;state.loaded=true;
+      state.activeId=state.conversations[0]?.id||null;state.loaded=true;
     }catch(error){console.error('Assistant conversation load failed',error);state.loaded=true;state.conversations=[];toast('无法读取已保存的助手对话');}
     if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant')renderAssistantPane();
   }
   function activeAssistantConversation(state){return state.conversations.find(item=>item.id===state.activeId)||state.conversations[0]||null;}
   function assistantConversationLabel(conversation){
     const first=conversation.turns[0]?.question?.trim();
-    const when=new Date(conversation.createdAt);const dateLabel=Number.isNaN(when.getTime())?'':when.toLocaleString(locale(),{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-    return `${dateLabel}${dateLabel?' · ':''}${first?first.slice(0,32):t('assistantNewConversation')}`;
+    return first?first.slice(0,48):t('assistantNewConversation');
+  }
+  function assistantConversationGroup(conversation){
+    const updated=new Date(conversation.updatedAt),today=new Date();today.setHours(0,0,0,0);
+    if(Number.isNaN(updated.getTime()))return 'older';
+    if(updated>=today)return 'today';
+    if(updated>=new Date(today.getTime()-86400000))return 'yesterday';
+    if(updated>=new Date(today.getTime()-7*86400000))return 'week';
+    return 'older';
+  }
+  function assistantModelCaption(){const pref=data.preferences;return `${pref.assistantModel==='deepseek-v4-pro'?'DeepSeek Pro':'DeepSeek Flash'} · ${pref.assistantThinking?t(`assistant${pref.assistantEffort==='max'?'Max':pref.assistantEffort==='low'?'Low':'High'}`):t('assistantThinkingOff')}`;}
+  function assistantListHTML(state){
+    const groups=[['today',t('assistantToday')],['yesterday',t('assistantYesterday')],['week',t('assistantThisWeek')],['older',t('assistantEarlier')]];
+    const conversations=[...state.conversations].sort((left,right)=>right.updatedAt.localeCompare(left.updatedAt));
+    return `<section class="assistant-panel assistant-list-view"><div class="assistant-list-heading"><h2>${t('assistantConversations')}</h2><button class="button" type="button" data-new-assistant-conversation>＋ ${t('assistantNewConversation')}</button></div><div class="assistant-conversation-list">${conversations.length?groups.map(([key,label])=>{const items=conversations.filter(item=>assistantConversationGroup(item)===key);return items.length?`<div class="assistant-list-group"><h3>${label}</h3>${items.map(item=>`<button class="assistant-list-item" type="button" data-open-assistant-conversation="${escapeHTML(item.id)}" title="${escapeHTML(new Date(item.updatedAt).toLocaleString(locale()))}"><span>${escapeHTML(assistantConversationLabel(item))}</span><span class="assistant-list-arrow" aria-hidden="true">›</span></button>`).join('')}</div>`:'';}).join(''):`<div class="assistant-list-empty"><strong>${t('assistantNoConversations')}</strong><p>${t('assistantStartHint')}</p><button class="button primary" type="button" data-new-assistant-conversation>${t('assistantNewConversation')}</button></div>`}</div></section>`;
   }
   function createAssistantConversation(articleId){
     const state=assistantArticleState(articleId);if(!state.loaded)return;
-    if(!activeAssistantConversation(state)?.turns.length){$('#assistant-question')?.focus();return;}
+    if(state.view==='chat'&&!activeAssistantConversation(state)?.turns.length){$('#assistant-question')?.focus();return;}
     const now=new Date().toISOString(),conversation={id:uid(),articleId,createdAt:now,updatedAt:now,turns:[],busy:false,draft:''};
-    state.conversations.unshift(conversation);state.activeId=conversation.id;saveAssistantConversation(conversation);renderAssistantPane();$('#assistant-question')?.focus();
+    state.conversations.unshift(conversation);state.activeId=conversation.id;state.view='chat';saveAssistantConversation(conversation);renderAssistantPane();$('#assistant-question')?.focus();
   }
   async function deleteAssistantArticle(articleId){
     const pending=assistantArticleState(articleId).conversations.map(item=>assistantSaveChains.get(item.id)).filter(Boolean);
@@ -855,8 +869,9 @@
     const root=$('#notes-body'),article=currentArticle();if(!root||!article)return;
     const state=assistantArticleState(article.id);
     if(!state.loaded){root.innerHTML=`<div class="assistant-loading" role="status">${t('assistantLoading')}</div>`;if(!state.loading)state.loading=loadAssistantArticle(article.id,state);return;}
-    const session=activeAssistantConversation(state),pref=data.preferences;if(!session)return;
-    root.innerHTML=`<section class="assistant-panel"><div class="assistant-conversation-picker"><label for="assistant-conversation-select">${t('assistantConversations')}</label><select id="assistant-conversation-select" aria-label="${t('assistantConversations')}">${state.conversations.map(item=>`<option value="${escapeHTML(item.id)}" ${item.id===session.id?'selected':''}>${escapeHTML(assistantConversationLabel(item))}</option>`).join('')}</select><button class="button" type="button" data-new-assistant-conversation>${t('assistantNewConversation')}</button></div><div class="assistant-controls"><label>${t('assistantModel')}<select id="assistant-model"><option value="deepseek-flash" ${pref.assistantModel==='deepseek-flash'?'selected':''}>DeepSeek Flash</option><option value="deepseek-v4-pro" ${pref.assistantModel==='deepseek-v4-pro'?'selected':''}>DeepSeek V4 Pro</option></select></label><label class="assistant-thinking-label"><input id="assistant-thinking" type="checkbox" ${pref.assistantThinking?'checked':''}>${t('assistantThinking')}</label><label>${t('assistantEffort')}<select id="assistant-effort" ${pref.assistantThinking?'':'disabled'}><option value="low" ${pref.assistantEffort==='low'?'selected':''}>${t('assistantLow')}</option><option value="high" ${pref.assistantEffort==='high'?'selected':''}>${t('assistantHigh')}</option><option value="max" ${pref.assistantEffort==='max'?'selected':''}>${t('assistantMax')}</option></select></label></div><div class="assistant-conversation" id="assistant-conversation" role="log" aria-live="polite">${session.turns.length?session.turns.map(assistantTurnHTML).join(''):`<div class="assistant-empty"><strong>${t('assistantAskAboutArticle')}</strong><p>${t('assistantGroundedHint')}</p></div>`}</div>${deepseekApiKey?`<form class="assistant-compose" id="assistant-form"><label class="sr-only" for="assistant-question">${t('assistantQuestion')}</label><textarea id="assistant-question" maxlength="4000" rows="3" placeholder="${t('assistantPlaceholder')}">${escapeHTML(session.draft)}</textarea><div><span>${t('assistantEnterHint')}</span><button class="button primary" type="submit" ${session.busy?'disabled':''}>${t('assistantSend')}</button></div></form>`:`<div class="assistant-key-needed"><p>${t('assistantKeyNeeded')}</p><button class="button" type="button" data-open-assistant-settings>${t('paperGoSettings')}</button></div>`}</section>`;
+    if(state.view!=='chat'){root.innerHTML=assistantListHTML(state);return;}
+    const session=activeAssistantConversation(state),pref=data.preferences;if(!session){state.view='list';root.innerHTML=assistantListHTML(state);return;}
+    root.innerHTML=`<section class="assistant-panel assistant-chat-view"><div class="assistant-chat-heading"><button type="button" class="assistant-back" data-assistant-back aria-label="${t('assistantBackToList')}">← <span>${t('assistantConversations')}</span></button><strong title="${escapeHTML(assistantConversationLabel(session))}">${escapeHTML(assistantConversationLabel(session))}</strong></div><div class="assistant-conversation" id="assistant-conversation" role="log" aria-live="polite">${session.turns.length?session.turns.map(assistantTurnHTML).join(''):`<div class="assistant-empty"><strong>${t('assistantAskAboutArticle')}</strong><p>${t('assistantGroundedHint')}</p></div>`}</div>${deepseekApiKey?`<form class="assistant-compose" id="assistant-form"><label class="sr-only" for="assistant-question">${t('assistantQuestion')}</label><textarea id="assistant-question" maxlength="4000" rows="3" placeholder="${t('assistantPlaceholder')}">${escapeHTML(session.draft)}</textarea><div class="assistant-compose-footer"><details class="assistant-model-settings"><summary><span class="assistant-model-caption">${assistantModelCaption()}</span><span aria-hidden="true">⌄</span></summary><div class="assistant-model-popover"><label>${t('assistantModel')}<select id="assistant-model"><option value="deepseek-flash" ${pref.assistantModel==='deepseek-flash'?'selected':''}>DeepSeek Flash</option><option value="deepseek-v4-pro" ${pref.assistantModel==='deepseek-v4-pro'?'selected':''}>DeepSeek V4 Pro</option></select></label><label class="assistant-thinking-label"><input id="assistant-thinking" type="checkbox" ${pref.assistantThinking?'checked':''}>${t('assistantThinking')}</label><label>${t('assistantEffort')}<select id="assistant-effort" ${pref.assistantThinking?'':'disabled'}><option value="low" ${pref.assistantEffort==='low'?'selected':''}>${t('assistantLow')}</option><option value="high" ${pref.assistantEffort==='high'?'selected':''}>${t('assistantHigh')}</option><option value="max" ${pref.assistantEffort==='max'?'selected':''}>${t('assistantMax')}</option></select></label></div></details><span class="assistant-send-hint">${t('assistantEnterHint')}</span><button class="button primary" type="submit" ${session.busy?'disabled':''}>${t('assistantSend')}</button></div></form>`:`<div class="assistant-key-needed"><p>${t('assistantKeyNeeded')}</p><button class="button" type="button" data-open-assistant-settings>${t('paperGoSettings')}</button></div>`}</section>`;
     $('#assistant-question',root)?.addEventListener('input',event=>{session.draft=event.target.value;});
     $('#assistant-question',root)?.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();$('#assistant-form',root).requestSubmit();}});
     $('#assistant-form',root)?.addEventListener('submit',event=>{event.preventDefault();submitAssistantQuestion(article.id,session.id);});
@@ -1010,8 +1025,10 @@
   document.addEventListener('click',e=>{
     const button=e.target.closest('button,[data-highlight-word]');if(!button)return;
     const toolMenu=button.closest('.study-tools');if(toolMenu)toolMenu.open=false;
-    if(button.dataset.sideTab){rightPaneMode=button.dataset.sideTab;activeWord=null;draft=null;renderNotes();return;}
+    if(button.dataset.sideTab){rightPaneMode=button.dataset.sideTab;if(rightPaneMode==='assistant')assistantArticleState(route.id).view='list';activeWord=null;draft=null;renderNotes();return;}
     if(button.hasAttribute('data-new-assistant-conversation')){createAssistantConversation(route.id);return;}
+    if(button.dataset.openAssistantConversation){const state=assistantArticleState(route.id);if(state.conversations.some(item=>item.id===button.dataset.openAssistantConversation)){state.activeId=button.dataset.openAssistantConversation;state.view='chat';renderAssistantPane();}return;}
+    if(button.hasAttribute('data-assistant-back')){assistantArticleState(route.id).view='list';renderAssistantPane();return;}
     if(button.hasAttribute('data-open-assistant-settings')){$('#settings-dialog').showModal();$('#deepseek-api-key').focus();return;}
     if(button.hasAttribute('data-new-article'))articleDialog();
     if(button.dataset.newFolder)openFolderDialog(button.dataset.newFolder);
