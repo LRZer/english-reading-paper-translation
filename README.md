@@ -1,5 +1,7 @@
 # 拾词 · 阅读与论文翻译笔记
 
+[English](README.en.md) | 中文
+
 本地运行的阅读、词汇笔记与论文翻译工具。文章和词汇保存在浏览器中；论文 PDF、提取文本和译文保存在浏览器的 IndexedDB 中。服务只监听本机 `127.0.0.1`。
 
 ## 启动
@@ -36,13 +38,6 @@ Windows 上也可以在安装依赖后双击 `打开拾词.cmd`。浏览器打�
 npm test
 ```
 
-仓库的 `.gitattributes` 将词典 `.mdx`、`.mdd` 文件交给 Git LFS；首次提交前应先确认 `git lfs ls-files` 能列出这两个文件。`node_modules/`、私人备份、日志和 `.env` 文件由 `.gitignore` 排除。公开仓库会同时公开词典文件；请确认词典的再分发许可。
-
-创建空的 GitHub 仓库后，在本地配置其远程地址并推送：
-
-```powershell
-git remote add origin https://github.com/<用户名>/<仓库名>.git
-git push -u origin main
-```
+仓库的 `.gitattributes` 将词典 `.mdx`、`.mdd` 文件交给 Git LFS；`git lfs ls-files` 应能列出这两个文件。`node_modules/`、私人备份、日志和 `.env` 文件由 `.gitignore` 排除。此公开仓库包含词典文件；请确认词典的再分发许可。
 
 项目中的 `vendor/pdfjs-dist` 用于 PDF 正文提取；其许可文件保留在该目录中。项目尚未选择开放源代码许可证。
