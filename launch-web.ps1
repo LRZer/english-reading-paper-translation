@@ -17,13 +17,13 @@ try {
             if (Test-WebReady) { $ready = $true; break }
             Start-Sleep -Milliseconds 200
         }
-        if (-not $ready) { throw 'Unable to start Shici. Check that port 4173 is available.' }
+        if (-not $ready) { throw 'Unable to start the reading and translation app. Check that port 4173 is available.' }
     }
     if ($CheckOnly) { Write-Output $appUrl }
     else { Start-Process $appUrl }
 } catch {
     if ($CheckOnly) { throw }
     Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'Shici') | Out-Null
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'English Reading and Paper Translation') | Out-Null
     exit 1
 }

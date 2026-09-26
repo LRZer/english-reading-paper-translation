@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { MDX, MDD } = require('js-mdict');
 
-const DICTIONARY_DIR = path.resolve(process.env.SHICI_DICTIONARY_DIR || path.join(__dirname,'dictionary','ldoce5'));
+const DICTIONARY_DIR = path.resolve(process.env.READING_DICTIONARY_DIR || process.env.SHICI_DICTIONARY_DIR || path.join(__dirname,'dictionary','ldoce5'));
 const MDX_PATH = path.join(DICTIONARY_DIR,'LDOCE5++ V 1-35.mdx');
 const MDD_PATH = path.join(DICTIONARY_DIR,'LDOCE5++ V 1-35.mdd');
 const DICTIONARY_NAME = 'Longman Dictionary of Contemporary English 5++';

@@ -1,4 +1,4 @@
-# Shici · Reading, Vocabulary Notes and Paper Translation
+# English Reading & Paper Translation
 
 English | [中文](README.md)
 
@@ -15,7 +15,7 @@ npm ci
 npm start
 ```
 
-On Windows, you can also double-click `打开拾词.cmd` after installing dependencies. Open `http://127.0.0.1:4173` in your browser. Use the same browser and address to access your existing local data. Opening `index.html` directly uses a different browser storage area and cannot access the local dictionary or paper extraction API.
+On Windows, you can also double-click `启动阅读与翻译.cmd` after installing dependencies. Open `http://127.0.0.1:4173` in your browser. Use the same browser and address to access your existing local data. Opening `index.html` directly uses a different browser storage area and cannot access the local dictionary or paper extraction API.
 
 ## Features
 
@@ -24,7 +24,7 @@ On Windows, you can also double-click `打开拾词.cmd` after installing depend
 - Read the original PDF in the browser's built-in viewer on the left and the full translation on the right. Multiple papers can be translated concurrently, and results are saved even if you leave the current paper.
 - Separate DeepSeek prompts for articles and papers. Enter an API key in Settings and test the connection. The key is stored only in this browser's local storage, not in project files or data exports.
 - Adjust the reading background, font size, line spacing, page margins, and dictionary font size.
-- Consult the bundled local Longman dictionary from a vocabulary entry. Its large files are managed with Git LFS; run `git lfs pull` after cloning or the dictionary will not load. Alternatively, set `SHICI_DICTIONARY_DIR` to a directory containing `LDOCE5++ V 1-35.mdx` and `LDOCE5++ V 1-35.mdd`.
+- Consult the bundled local Longman dictionary from a vocabulary entry. Its large files are managed with Git LFS; run `git lfs pull` after cloning or the dictionary will not load. Alternatively, set `READING_DICTIONARY_DIR` to a directory containing `LDOCE5++ V 1-35.mdx` and `LDOCE5++ V 1-35.mdd`.
 
 Paper import supports English PDFs with a selectable text layer. Images, tables, and formulas remain visible in the original PDF on the left; scanned PDFs are not OCR-processed. Translation uses text extracted from the PDF, so extraction quality affects the result. AI translation sends article text or extracted paper text to DeepSeek.
 

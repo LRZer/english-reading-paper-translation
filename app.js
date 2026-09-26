@@ -323,18 +323,18 @@
     window.scrollTo(0,0);
   }
   function renderHome() {
-    document.title='拾词 · 雅思阅读词汇本';
+    document.title='英文阅读与论文翻译';
     app.innerHTML=`<div class="page"><div class="entry-grid"><a class="entry main-entry" href="#articles"><h2>开始阅读</h2><p>添加英文原文，在上下文里记录新词。</p><span class="entry-link">进入文章库 <span>↗</span></span></a><a class="entry" href="#vocabulary"><h2>我的词汇库</h2><p>${data.words.length ? `已积累 ${data.words.length} 个词汇。`:'查看记录的释义和笔记。'}</p><span class="entry-link">查看全部词汇 <span>↗</span></span></a></div><div class="section-heading"><h2>最近的文章 <span class="count-badge">${data.articles.length}</span></h2><button class="text-button" data-new-article>＋ 添加文章</button></div>${data.articles.length?articleCards(sortedArticles().slice(0,3)):empty('还没有文章','粘贴一篇英文文章，就可以边读边记词汇。','<button class="button primary" data-new-article>＋ 添加文章</button>')}</div>`;
   }
   function renderArticles() {
-    document.title='文章库 · 拾词';
+    document.title='文章库 · 英文阅读与论文翻译';
     const active=folderFor('article',route.id)?.id||'',counts=new Map();data.articles.forEach(article=>{if(article.folderId)counts.set(article.folderId,(counts.get(article.folderId)||0)+1);});
     const scoped=sortedArticles().filter(article=>!active||article.folderId===active);
     app.innerHTML=`<div class="page library-page"><div class="library-heading"><div><span class="eyebrow">READING LIBRARY</span><h1>文章库</h1></div><button class="button primary" data-new-article>＋ 添加文章</button></div><div class="library-layout">${folderSidebar('article',active,data.articles.length,counts)}<section class="library-content"><div class="library-toolbar">${data.articles.length?'<input class="search" id="article-search" type="search" placeholder="搜索标题、来源或内容" aria-label="搜索文章">':''}<span class="library-scope"><b>${escapeHTML(active?folderFor('article',active).name:'全部文章')}</b> · ${scoped.length}</span></div><div id="article-list">${scoped.length?articleCards(scoped):empty(active?'这个文件夹还没有文章':'还没有添加文章',active?'可以把文章移动到这里。':'点击“添加文章”，粘贴你想阅读的英文原文。')}</div></section></div></div>`;
     $('#article-search')?.addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();const list=scoped.filter(a=>(a.title+' '+a.source+' '+a.body).toLowerCase().includes(q));$('#article-list').innerHTML=list.length?articleCards(list):empty('没有找到相关的文章','试试其他关键词。');localizeDOM($('#article-list'));});
   }
   function renderPapers(){
-    document.title='论文库 · 拾词';
+    document.title='论文库 · 英文阅读与论文翻译';
     const openId=route.id.startsWith('open/')?route.id.slice(5):'';
     if(openId){
       if(paperSession?.id!==openId){app.innerHTML='<div class="paper-library-loading"><i class="paper-spinner" aria-hidden="true"></i><span>正在打开论文…</span></div>';if(paperLibraryLoaded)openSavedPaper(openId);else loadPaperLibrary();return;}
@@ -422,7 +422,7 @@
     return `<div class="word-table"><div class="word-row table-heading"><span>单词 / 短语</span><span>中文释义</span><span class="source-column">来源文章</span><span></span></div>${words.map(w=>`<button class="word-row" data-open-word="${escapeHTML(w.id)}"><span class="word-term">${escapeHTML(w.term)}<small>${date(w.updatedAt)} 记录</small></span><span class="definition">${escapeHTML(w.zh)||'尚未填写'}</span><span class="definition source-column">${escapeHTML(data.articles.find(a=>a.id===w.articleId)?.title||'独立词汇')}</span><span class="muted">↗</span></button>`).join('')}</div>`;
   }
   function renderVocabulary() {
-    document.title='词汇库 · 拾词';
+    document.title='词汇库 · 英文阅读与论文翻译';
     app.innerHTML=`<div class="page"><div class="library-toolbar">${data.words.length?'<input class="search" id="word-search" type="search" placeholder="搜索单词、释义或笔记" aria-label="搜索词汇">':''}<button class="button primary" data-new-word>＋ 添加词汇</button></div><div id="vocabulary-list">${data.words.length?wordRows([...data.words].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt))):empty('词汇库为空','阅读时选中单词或短语，或直接添加词汇。','<a href="#articles" class="button">去阅读文章 ↗</a>')}</div></div>`;
     $('#word-search')?.addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();const list=data.words.filter(w=>[w.term,w.zh,w.note].join(' ').toLowerCase().includes(q));$('#vocabulary-list').innerHTML=list.length?wordRows(list):empty('没有找到相关的词汇','试试单词、释义或笔记中的其他关键词。');localizeDOM($('#vocabulary-list'));});
   }
@@ -431,7 +431,7 @@
     return stored+(usageStartedAt!==null?Math.max(0,Date.now()-usageStartedAt):0);
   }
   function renderData() {
-    document.title='数据 · 拾词';
+    document.title='数据 · 英文阅读与论文翻译';
     const days=Array.from({length:7},(_,index)=>{const day=new Date();day.setHours(12,0,0,0);day.setDate(day.getDate()-(6-index));const key=dateKey(day);return {key,label:index===6?'今天':`${day.getMonth()+1}/${day.getDate()}`,usage:(data.activity.usageByDate[key]||0)+(index===6&&usageStartedAt!==null?Date.now()-usageStartedAt:0),articles:data.articles.filter(a=>dateKey(a.createdAt)===key).length,words:data.words.filter(w=>dateKey(w.createdAt)===key).length};});
     const maxUsage=Math.max(1,...days.map(day=>day.usage));
     const maxAdded=Math.max(1,...days.flatMap(day=>[day.articles,day.words]));
@@ -538,7 +538,7 @@
     if(unsaved){e.preventDefault();e.returnValue='';}
   });
   function renderStudy() {
-    const a=currentArticle();document.title=`${a.title} · 拾词`;
+    const a=currentArticle();document.title=`${a.title} · 英文阅读与论文翻译`;
     app.innerHTML=`<div class="study-layout"><section class="reading-pane" aria-label="文章阅读区"></section><div class="splitter" role="separator" aria-label="调整文章和词汇面板宽度" aria-orientation="vertical" aria-valuemin="35" aria-valuemax="72" aria-valuenow="${data.preferences.split}" tabindex="0"></div><aside class="notes-pane" aria-label="词汇笔记"><div class="notes-body" id="notes-body"></div></aside></div>`;
     renderReadingPane();renderNotes();setupSplitter();
   }
@@ -574,7 +574,7 @@
     const scrollTop=articleEdits.get(route.id)?.scrollTop||0;
     articleEdits.delete(route.id);
     renderHeader();renderReadingPane();
-    document.title=`${currentArticle().title} · 拾词`;
+    document.title=`${currentArticle().title} · 英文阅读与论文翻译`;
     $('.reading-pane').scrollTop=scrollTop;
     $('#header-study-actions [data-edit-article]')?.focus({preventScroll:true});
   }
@@ -838,7 +838,7 @@
   $('#article-form').addEventListener('submit',e=>{e.preventDefault();const title=$('#article-title').value.trim(),source=$('#article-source').value.trim(),folderId=folderFor('article',$('#article-folder').value)?.id||null,body=$('#article-body').value.trim(),translationTitle=$('#article-translation-title').value.trim(),translation=$('#article-translation').value.trim();if(!title||!body){toast('请填写标题和英文原文');return;}if(body.length>2000000||translation.length>2000000){toast('文章过长，请分成多篇添加');return;}const now=new Date().toISOString();let a=data.articles.find(a=>a.id===editingArticle);if(a)Object.assign(a,{title,source,folderId,body,translationTitle,translation,updatedAt:now});else{a={id:uid(),folderId,title,source,body,translationTitle,translation,createdAt:now,updatedAt:now};data.articles.push(a);}persist();$('#article-dialog').close();if(location.hash===`#study/${a.id}`)render();else location.hash=`study/${a.id}`;});
   async function apiPostStream(path,payload,onProgress){
     let response;
-    try{response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch{throw new Error('无法连接本机翻译服务，请重新打开拾词快捷方式后再试。');}
+    try{response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch{throw new Error('无法连接本机翻译服务，请重新运行“启动阅读与翻译.cmd”后再试。');}
     if(!response.ok){let result;try{result=await response.json();}catch{result=null;}throw new Error(result?.error||'DeepSeek 请求失败，请稍后再试。');}
     if(!response.body?.getReader){let result;try{result=await response.json();}catch{result=null;}if(!result)throw new Error('翻译服务没有返回结果，请重试。');return result;}
     const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',completed=null;
@@ -849,7 +849,7 @@
   }
   async function apiPost(path,payload){
     let response;
-    try{response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch{throw new Error('无法连接本机翻译服务，请重新打开拾词快捷方式后再试。');}
+    try{response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}catch{throw new Error('无法连接本机翻译服务，请重新运行“启动阅读与翻译.cmd”后再试。');}
     let result;try{result=await response.json();}catch{result=null;}
     if(!response.ok)throw new Error(result?.error||'DeepSeek 请求失败，请稍后再试。');
     return result;
@@ -921,7 +921,7 @@
   $('#settings-button').onclick=()=>$('#settings-dialog').showModal();
   $('#settings-backup-button').onclick=()=>{$('#settings-dialog').close();$('#backup-dialog').showModal();};
   function exportData(){
-    const blob=new Blob([JSON.stringify({...data,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`拾词备份-${new Date().toISOString().slice(0,10)}.json`;a.hidden=true;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('已发起备份下载，请在浏览器下载列表中确认');}
+    const blob=new Blob([JSON.stringify({...data,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`阅读与翻译备份-${new Date().toISOString().slice(0,10)}.json`;a.hidden=true;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('已发起备份下载，请在浏览器下载列表中确认');}
   $('#export-button').onclick=exportData;
   $('#import-button').onclick=()=>$('#import-file').click();
   $('#backup-text-button').onclick=()=>{$('#backup-text').value=JSON.stringify({...data,exportedAt:new Date().toISOString()},null,2);$('#backup-text-panel').hidden=false;};

@@ -110,10 +110,10 @@ server.on('error',error=>{
   if(error.code!=='EADDRINUSE'){console.error(error.message);process.exitCode=1;return;}
   const request=http.get('http://127.0.0.1:4173/health',{timeout:2000},res=>{
     let body='';res.on('data',chunk=>body+=chunk);res.on('end',()=>{
-      try {if(JSON.parse(body).app==='shici-notebook'){console.log('Shici is already running: http://127.0.0.1:4173');openBrowser();return;}} catch {}
+      try {if(JSON.parse(body).app==='shici-notebook'){console.log('Reading and translation app is already running: http://127.0.0.1:4173');openBrowser();return;}} catch {}
       console.error('Port 4173 is used by another application. Close that application and try again.');process.exitCode=1;
     });
   });
   request.on('timeout',()=>request.destroy());request.on('error',()=>{console.error('Unable to connect to port 4173. Please close the other application and try again.');process.exitCode=1;});
 });
-server.listen(PORT,'127.0.0.1',()=>{console.log(`Shici Notebook: http://127.0.0.1:${PORT}\nKeep this window open while using the notebook. Press Ctrl+C to stop.`);openBrowser();});
+server.listen(PORT,'127.0.0.1',()=>{console.log(`English Reading and Paper Translation: http://127.0.0.1:${PORT}\nKeep this window open while using the app. Press Ctrl+C to stop.`);openBrowser();});

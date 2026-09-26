@@ -1,7 +1,7 @@
 {
-  "name": "shici-notebook",
+  "name": "english-reading-paper-translation",
   "version": "1.0.0",
-  "description": "个人雅思阅读与词汇笔记网页版",
+  "description": "本地英文阅读、词汇笔记与论文 PDF 翻译工具",
   "private": true,
   "scripts": {
     "start": "node server.cjs --open",
