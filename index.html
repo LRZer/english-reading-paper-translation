@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f7f8f5">
+  <meta name="description" content="从自己的英文文章出发，记录释义与笔记的个人雅思词汇系统。">
+  <title>拾词 · 雅思阅读词汇本</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="i18n.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <nav aria-label="主导航"><a href="#home" data-nav="home">首页</a><a href="#articles" data-nav="articles">文章库</a><a href="#papers" data-nav="papers">论文库</a><a href="#vocabulary" data-nav="vocabulary">词汇库</a><a href="#data" data-nav="data">数据</a></nav>
+    <details class="mobile-navigation"><summary aria-label="打开导航">导航</summary><nav aria-label="折叠导航"><a href="#home" data-nav="home">首页</a><a href="#articles" data-nav="articles">文章库</a><a href="#papers" data-nav="papers">论文库</a><a href="#vocabulary" data-nav="vocabulary">词汇库</a><a href="#data" data-nav="data">数据</a></nav></details>
+    <div id="header-study" class="header-study" hidden></div>
+    <div class="header-right"><div id="header-study-actions" class="header-study-actions" hidden></div><span id="save-status" role="status">本机保存</span><button class="button settings-button" id="settings-button" aria-haspopup="dialog" aria-controls="settings-dialog">设置</button><button class="icon-button" id="backup-button" title="数据备份" aria-label="数据备份">↥</button></div>
+  </header>
+  <main id="app"></main>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-heading"><h2 id="settings-title">设置</h2><button class="icon-button" data-close aria-label="关闭设置">×</button></div>
+    <div id="settings-controls"></div>
+    <p class="muted settings-hint">调整后实时生效并自动保存。</p>
+    <div class="settings-footer"><button class="text-button" id="settings-backup-button">数据备份</button></div>
+  </dialog>
+  <dialog id="article-dialog">
+    <form id="article-form">
+      <div class="dialog-heading"><div><span class="eyebrow">YOUR READING</span><h2 id="article-dialog-title">添加文章</h2></div><button type="button" class="icon-button" data-close aria-label="关闭">×</button></div>
+      <label for="article-title">文章标题</label><input id="article-title" maxlength="200" placeholder="为这篇文章起个名字" required>
+      <label for="article-source">文章来源 <span class="muted">可选</span></label><input id="article-source" maxlength="500" placeholder="例如 Cambridge IELTS 15、书籍名称或网页地址">
+      <label for="article-folder">文件夹</label><select id="article-folder"></select>
+      <label for="article-body">英文原文</label><textarea id="article-body" rows="13" placeholder="在这里粘贴你的英文文章，保留原有分段……" required></textarea>
+      <label for="article-translation-title">中文标题 <span class="muted">可选</span></label><input id="article-translation-title" maxlength="300" placeholder="可自行填写，也可由 AI 翻译生成">
+      <label for="article-translation">中文译文 <span class="muted">可选</span></label><textarea id="article-translation" rows="9" maxlength="2000000" placeholder="粘贴中文译文，段落顺序尽量与英文一致……"></textarea>
+      <div class="dialog-footer"><span class="muted" id="article-storage-hint">内容由你添加，保存在本机浏览器中</span><button class="button primary" type="submit">保存并开始阅读 <span>↗</span></button></div>
+    </form>
+  </dialog>
+  <dialog id="folder-dialog">
+    <form id="folder-form">
+      <div class="dialog-heading"><h2>新建文件夹</h2><button type="button" class="icon-button" data-close aria-label="关闭">×</button></div>
+      <label for="folder-name">文件夹名称</label><input id="folder-name" maxlength="60" autocomplete="off" required>
+      <div class="dialog-footer"><button class="button" type="button" data-close>取消</button><button class="button primary" type="submit">创建文件夹</button></div>
+    </form>
+  </dialog>
+  <dialog id="word-dialog"><div class="dialog-heading"><h2>词汇笔记</h2><button class="icon-button" data-close aria-label="关闭">×</button></div><div id="word-dialog-content"></div></dialog>
+  <dialog id="translation-dialog" aria-labelledby="translation-title">
+    <div class="dialog-heading"><div><span class="eyebrow">DEEPSEEK V4 PRO</span><h2 id="translation-title">检查译文</h2></div><button class="icon-button" data-close aria-label="关闭译文预览">×</button></div>
+    <p class="translation-result-meta" id="translation-result-meta"></p>
+    <label class="translation-preview-label" for="translation-title-preview">中文标题</label>
+    <input id="translation-title-preview" maxlength="300" aria-label="DeepSeek 生成的中文标题">
+    <label class="translation-preview-label" for="translation-preview">中文译文</label>
+    <textarea id="translation-preview" rows="16" maxlength="2000000" aria-label="DeepSeek 生成的中文译文"></textarea>
+    <div class="dialog-footer"><span class="muted">保存前可以直接修改；原文不会被更改。</span><button class="button" type="button" data-close>取消</button><button class="button primary" type="button" id="save-translation">保存译文</button></div>
+  </dialog>
+  <dialog id="backup-dialog">
+    <div class="dialog-heading"><h2>数据备份</h2><button class="icon-button" data-close aria-label="关闭">×</button></div>
+    <p class="muted" id="backup-description">文章与词汇保存在当前浏览器中，不会自动同步到其他设备。建议定期导出备份，清理浏览器数据前请先备份。</p>
+    <div class="backup-row"><div><h3>导出全部内容</h3><p>保存文章、词汇和笔记为一个备份文件。</p></div><button class="button primary" id="export-button">导出备份</button></div>
+    <div class="backup-row"><div><h3>导入备份</h3><p>将备份合并到当前内容，不覆盖已有笔记。</p></div><button class="button" id="import-button">选择文件</button><input type="file" id="import-file" accept=".json,application/json" hidden></div>
+    <button class="text-button" id="backup-text-button">下载未出现？查看备份文本</button>
+    <div id="backup-text-panel" hidden><p class="muted">复制下方全部文本，保存为 .json 文件，也可以作为备份导入。</p><textarea id="backup-text" rows="6" readonly aria-label="完整备份文本"></textarea><button class="text-button" id="copy-backup-button">复制全部备份文本</button></div>
+  </dialog>
+  <dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p id="confirm-description" class="muted"></p><div class="dialog-footer"><button class="button" id="confirm-cancel">取消</button><button class="button danger" id="confirm-ok">确认删除</button></div></dialog>
+  <noscript>请启用浏览器的 JavaScript 后使用拾词。</noscript>
+</body>
+</html>

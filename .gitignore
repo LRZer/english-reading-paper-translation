@@ -1,0 +1,10 @@
+node_modules/
+保留的数据/
+验收记录.md
+*.log
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
+Thumbs.db

@@ -1,0 +1,56 @@
+const {JSDOM}=require('jsdom');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const root=path.join(__dirname,'..');
+const key='shici-notebook-v1';
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+const script=fs.readFileSync(path.join(root,'app.js'),'utf8');
+const i18n=fs.readFileSync(path.join(root,'i18n.js'),'utf8');
+const css=fs.readFileSync(path.join(root,'styles.css'),'utf8');
+const fixture={version:1,preferences:{split:59,fontSize:19,notesFontSize:16,quickAddWords:true},articles:[{id:'article',title:'Quick add',body:'Select target word.',translation:'',createdAt:'2026-09-20',updatedAt:'2026-09-20'}],words:[]};
+const dom=new JSDOM(html,{url:'http://localhost/#study/article',runScripts:'outside-only',pretendToBeVisual:true});
+const {window}=dom,document=window.document;
+window.scrollTo=()=>{};
+window.localStorage.setItem(key,JSON.stringify(fixture));
+window.eval(i18n);window.eval(script);
+function select(start,end){
+  const article=document.querySelector('#article-text'),node=article.firstChild,range=document.createRange();
+  range.setStart(node,start);range.setEnd(node,end);range.getBoundingClientRect=()=>({left:20,bottom:20});
+  window.getSelection().removeAllRanges();window.getSelection().addRange(range);
+  article.dispatchEvent(new window.MouseEvent('mouseup',{bubbles:true}));
+  assert.equal(document.querySelector('.selection-action'),null);
+  document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'a',code:'KeyA',ctrlKey:true,bubbles:true,cancelable:true}));
+}
+try{
+  const ordinarySelectAll=new window.KeyboardEvent('keydown',{key:'a',code:'KeyA',ctrlKey:true,bubbles:true,cancelable:true});document.dispatchEvent(ordinarySelectAll);assert.equal(ordinarySelectAll.defaultPrevented,false);
+  assert.equal(document.querySelector('[data-toggle-quick-add]').getAttribute('aria-checked'),'true');
+  select(7,13);
+  assert.equal(document.querySelector('#word-form'),null);
+  assert.equal(document.querySelector('.study-word-item strong').textContent,'target');
+  assert.equal(JSON.parse(window.localStorage.getItem(key)).words.length,1);
+  document.querySelector('.study-word-item').click();
+  assert.equal(document.querySelector('.context-term').textContent,'target');
+  const note=document.querySelector('#word-note');Object.defineProperty(note,'scrollHeight',{configurable:true,value:640});note.value='A long note\n'.repeat(20);note.dispatchEvent(new window.Event('input',{bubbles:true}));assert.equal(note.style.height,'640px');
+  assert.match(css,/\.word-form textarea\{[^}]*overflow:hidden;resize:none/);
+  assert.equal(document.querySelector('#word-save'),null);
+  assert.equal(document.querySelector('#word-back').textContent,'返回词汇栏');
+  const zh=document.querySelector('#word-zh');zh.value='目标';zh.dispatchEvent(new window.Event('input',{bubbles:true}));
+  assert.equal(JSON.parse(window.localStorage.getItem(key)).words[0].zh,'目标');
+  document.querySelector('#word-back').click();
+  assert.equal(document.querySelector('.study-word-item small').textContent,'目标');
+  document.querySelector('[data-toggle-quick-add]').click();
+  assert.equal(document.querySelector('[data-toggle-quick-add]').getAttribute('aria-checked'),'false');
+  select(0,6);
+  assert.ok(document.querySelector('#word-form'));
+  assert.equal(document.querySelector('#word-term').value,'Select');
+  assert.equal(JSON.parse(window.localStorage.getItem(key)).words.length,2);
+  document.querySelector('#word-back').click();
+  assert.deepEqual([...document.querySelectorAll('.study-word-item strong')].map(item=>item.textContent),['Select','target']);
+  document.querySelector('.study-word-item').click();
+  document.querySelector('#delete-word').click();
+  assert.equal(document.querySelector('#confirm-dialog').open,false);
+  assert.equal(document.querySelector('#word-form'),null);
+  assert.equal(JSON.parse(window.localStorage.getItem(key)).words.length,1);
+  console.log('PASS: quick-add setting, immediate list insertion, autosave and return navigation.');
+}finally{window.close();}

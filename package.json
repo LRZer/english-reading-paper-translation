@@ -1,0 +1,17 @@
+{
+  "name": "shici-notebook",
+  "version": "1.0.0",
+  "description": "个人雅思阅读与词汇笔记网页版",
+  "private": true,
+  "scripts": {
+    "start": "node server.cjs --open",
+    "web": "node server.cjs",
+    "test": "node tests/typography.cjs && node tests/inline-editing.cjs && node tests/dashboard.cjs && node tests/usage-focus.cjs && node tests/quick-add.cjs && node tests/inflections.cjs && node tests/deepseek-api.cjs && node tests/deepseek-ui.cjs && node tests/i18n.cjs && node tests/dictionary.cjs && node tests/dictionary-ui.cjs && node tests/paper-extractor.cjs && node tests/paper-ui.cjs && node tests/paper-progress.cjs && node tests/paper-concurrency.cjs && node tests/library-folders.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.0"
+  },
+  "dependencies": {
+    "js-mdict": "^6.0.6"
+  }
+}

@@ -1,0 +1,2 @@
+dictionary/ldoce5/*.mdx filter=lfs diff=lfs merge=lfs -text
+dictionary/ldoce5/*.mdd filter=lfs diff=lfs merge=lfs -text
