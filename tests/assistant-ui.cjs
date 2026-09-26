@@ -7,9 +7,14 @@ const fixture={version:1,preferences:{},articles:[
   {id:'first',title:'First article',source:'Magazine',body:'Explorers travel.\n\nThey learn.',createdAt:'2026-09-20',updatedAt:'2026-09-20'},
   {id:'second',title:'Second article',body:'A different subject.',createdAt:'2026-09-20',updatedAt:'2026-09-20'}
 ],words:[]};
+function memoryIndexedDb(){
+  const records=new Map();let initialized=false;
+  return {records,open(){const request={};setTimeout(()=>{const db={objectStoreNames:{contains:()=>initialized},createObjectStore:()=>{},close:()=>{},transaction:()=>{const transaction={};const finish=(operation,result)=>setTimeout(()=>{operation.result=result;operation.onsuccess?.();setTimeout(()=>transaction.oncomplete?.(),0);},0);transaction.objectStore=()=>({put:value=>{const operation={};records.set(value.id,value);finish(operation,value.id);return operation;},getAll:()=>{const operation={};finish(operation,[...records.values()]);return operation;},delete:id=>{const operation={};records.delete(id);finish(operation,undefined);return operation;}});return transaction;}};request.result=db;if(!initialized){request.onupgradeneeded?.();initialized=true;}request.onsuccess?.();},0);return request;}};
+}
+const assistantDb=memoryIndexedDb();
 const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'http://127.0.0.1:4173/#study/first',runScripts:'outside-only',pretendToBeVisual:true});
 const {window}=dom,document=window.document;
-window.scrollTo=()=>{};window.TextDecoder=TextDecoder;
+window.scrollTo=()=>{};window.TextDecoder=TextDecoder;window.indexedDB=assistantDb;
 window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
 window.HTMLDialogElement.prototype.close=function(){this.open=false;};
 window.localStorage.setItem(key,JSON.stringify(fixture));window.localStorage.setItem('shici-deepseek-api-key','sk-test-assistant');
@@ -25,10 +30,11 @@ window.fetch=async(url,options)=>{
 window.eval(fs.readFileSync(path.join(root,'i18n.js'),'utf8'));
 window.eval(fs.readFileSync(path.join(root,'app.js'),'utf8'));
 const waitFor=async predicate=>{for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,5));}throw new Error('Timed out waiting for assistant UI');};
-const change=(element,value)=>{element.value=value;element.dispatchEvent(new window.Event('change',{bubbles:true}));};
+const change=(element,value)=>{element.value=value;element.dispatchEvent(new element.ownerDocument.defaultView.Event('change',{bubbles:true}));};
 const ask=question=>{const field=document.querySelector('#assistant-question');field.value=question;field.dispatchEvent(new window.Event('input',{bubbles:true}));document.querySelector('#assistant-form').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));};
 (async()=>{try{
   document.querySelector('[data-side-tab="assistant"]').click();
+  await waitFor(()=>document.querySelector('#assistant-model'));
   assert.equal(document.querySelector('[data-side-tab="assistant"]').getAttribute('aria-selected'),'true');
   change(document.querySelector('#assistant-model'),'deepseek-v4-pro');
   document.querySelector('#assistant-thinking').click();
@@ -40,17 +46,60 @@ const ask=question=>{const field=document.querySelector('#assistant-question');f
   firstController.enqueue(line({type:'reasoning',text:'Check paragraph two.'}));
   firstController.enqueue(line({type:'content',text:'They learn in [P2].'}));
   firstController.enqueue(line({type:'complete',result:{answer:'They learn in [P2].',reasoning:'Check paragraph two.',model:'deepseek-v4-pro'}}));firstController.close();
+  await waitFor(()=>document.querySelector('#assistant-conversation-select'));
   document.querySelector('[data-side-tab="assistant"]').click();
   assert.equal(document.querySelectorAll('.assistant-turn').length,0);
   change(document.querySelector('#assistant-model'),'deepseek-flash');document.querySelector('#assistant-thinking').click();
   ask('What is this about?');await waitFor(()=>document.querySelector('.assistant-answer')?.textContent==='Second reply.');
   assert.equal(calls[1].thinking,false);assert.equal(calls[1].model,'deepseek-flash');
-  window.location.hash='#study/first';await waitFor(()=>document.querySelector('.header-study h1')?.textContent==='First article');
+  window.location.hash='#study/first';await waitFor(()=>document.querySelector('.header-study h1')?.textContent==='First article'&&document.querySelector('.assistant-answer')?.textContent.includes('They learn'));
   assert.match(document.querySelector('.assistant-answer').textContent,/They learn in \[P2\]/);
   assert.match(document.querySelector('.assistant-reasoning-text').textContent,/Check paragraph two/);
   ask('And why?');await waitFor(()=>document.querySelectorAll('.assistant-turn').length===2&&document.querySelectorAll('.assistant-answer')[1].textContent==='Follow-up reply.');
   assert.deepEqual(calls[2].history,[{role:'user',content:'What do they learn?'},{role:'assistant',content:'They learn in [P2].'}]);
+  await waitFor(()=>[...assistantDb.records.values()].find(item=>item.articleId==='first')?.turns.length===2);
+  document.querySelector('[data-new-assistant-conversation]').click();
+  assert.equal(document.querySelectorAll('.assistant-turn').length,0);
+  ask('A fresh question?');await waitFor(()=>document.querySelector('.assistant-answer')?.textContent==='Follow-up reply.');
+  assert.deepEqual(calls[3].history,[]);
+  assert.equal(document.querySelectorAll('#assistant-conversation-select option').length,2);
+  const firstId=[...assistantDb.records.values()].find(item=>item.articleId==='first'&&item.turns[0]?.question==='What do they learn?').id;
+  change(document.querySelector('#assistant-conversation-select'),firstId);
+  assert.equal(document.querySelectorAll('.assistant-turn').length,2);
+  await waitFor(()=>[...assistantDb.records.values()].filter(item=>item.articleId==='first').length===2);
+
+  const reloadDom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'http://127.0.0.1:4173/#study/first',runScripts:'outside-only',pretendToBeVisual:true});
+  const reloadWindow=reloadDom.window,reloadDocument=reloadWindow.document;
+  reloadWindow.scrollTo=()=>{};reloadWindow.TextDecoder=TextDecoder;reloadWindow.indexedDB=assistantDb;
+  reloadWindow.localStorage.setItem(key,window.localStorage.getItem(key));reloadWindow.localStorage.setItem('shici-deepseek-api-key','sk-test-assistant');
+  reloadWindow.eval(fs.readFileSync(path.join(root,'i18n.js'),'utf8'));reloadWindow.eval(fs.readFileSync(path.join(root,'app.js'),'utf8'));
+  reloadDocument.querySelector('[data-side-tab="assistant"]').click();
+  await waitFor(()=>reloadDocument.querySelectorAll('#assistant-conversation-select option').length===2);
+  change(reloadDocument.querySelector('#assistant-conversation-select'),firstId);
+  assert.equal(reloadDocument.querySelectorAll('.assistant-turn').length,2);
+  assert.match(reloadDocument.querySelector('.assistant-reasoning-text').textContent,/Check paragraph two/);
+  reloadDocument.querySelector('#backup-text-button').click();
+  await waitFor(()=>reloadDocument.querySelector('#backup-text').value.includes('assistantConversations'));
+  const backup=JSON.parse(reloadDocument.querySelector('#backup-text').value);
+  assert.equal(backup.assistantConversations.length,3);
+  assert.equal(JSON.stringify(backup).includes('sk-test-assistant'),false);
+  reloadWindow.close();
+
+  const importedDb=memoryIndexedDb(),importDom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'http://127.0.0.1:4173/#study/first',runScripts:'outside-only',pretendToBeVisual:true});
+  const importWindow=importDom.window,importDocument=importWindow.document;
+  importWindow.scrollTo=()=>{};importWindow.TextDecoder=TextDecoder;importWindow.indexedDB=importedDb;
+  importWindow.HTMLDialogElement.prototype.close=function(){this.open=false;};
+  importWindow.eval(fs.readFileSync(path.join(root,'i18n.js'),'utf8'));importWindow.eval(fs.readFileSync(path.join(root,'app.js'),'utf8'));
+  const input=importDocument.querySelector('#import-file');Object.defineProperty(input,'files',{configurable:true,value:[{size:1000,text:async()=>JSON.stringify(backup)}]});
+  input.dispatchEvent(new importWindow.Event('change',{bubbles:true}));
+  await waitFor(()=>importedDb.records.size===3);
+  importWindow.location.hash='#study/first';
+  await waitFor(()=>importDocument.querySelector('[data-side-tab="assistant"]'));
+  importDocument.querySelector('[data-side-tab="assistant"]').click();
+  await waitFor(()=>importDocument.querySelectorAll('#assistant-conversation-select option').length===2);
+  assert.equal(importedDb.records.get(firstId).turns.length,2);
+  importWindow.close();
   assert.equal(JSON.parse(window.localStorage.getItem(key)).preferences.assistantModel,'deepseek-flash');
   assert.equal(window.localStorage.getItem(key).includes('sk-test-assistant'),false);
-  console.log('PASS: article assistant controls, streamed reasoning, per-article sessions, follow-up history and local key isolation.');
+  console.log('PASS: assistant reasoning, per-article saved chats, new/old chat switching, reload, backup import/export and key isolation.');
 }finally{window.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

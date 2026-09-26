@@ -514,6 +514,11 @@ body{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;backg
 .notes-pane.assistant-open .study-side-tabs{position:static;flex:none}
 .is-studying .notes-pane.assistant-open .notes-body{display:flex;flex:1;min-height:0;padding:0}
 .assistant-panel{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;font-size:var(--notes-size,16px)}
+.assistant-loading{padding:28px;color:var(--muted);font-size:.83rem}
+.assistant-conversation-picker{display:flex;align-items:center;gap:9px;padding:12px 20px;border-bottom:1px solid var(--line)}
+.assistant-conversation-picker label{flex:none;color:var(--muted);font-size:.72em}
+.assistant-conversation-picker select{flex:1;min-width:0;height:36px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--reading-background,#fff);color:var(--dark);font:inherit;font-size:.76em}
+.assistant-conversation-picker .button{flex:none;min-height:36px;padding:6px 10px;font-size:.72em;white-space:nowrap}
 .assistant-controls{display:flex;flex-wrap:wrap;align-items:end;gap:10px;padding:14px 20px;border-bottom:1px solid var(--line)}
 .assistant-controls label{display:grid;gap:4px;font-size:.7em;color:var(--muted)}
 .assistant-controls select{min-width:105px;max-width:160px;height:34px;border:1px solid var(--line);border-radius:6px;padding:4px 8px;background:var(--reading-background,#fff);color:var(--dark);font:inherit;font-size:1.1em}

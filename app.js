@@ -4,6 +4,9 @@
   const DEEPSEEK_STORAGE_KEY = 'shici-deepseek-api-key';
   const PAPER_DB_NAME = 'shici-paper-storage-v1';
   const PAPER_DB_STORE = 'papers';
+  const ASSISTANT_DB_NAME = 'shici-assistant-storage-v1';
+  const ASSISTANT_DB_STORE = 'conversations';
+  const ASSISTANT_FALLBACK_KEY = 'shici-assistant-conversations-v1';
   const LEGACY_PAPER_RECORD_KEY = 'last-opened';
   const I18N = window.SHICI_I18N;
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -38,6 +41,7 @@
   let data = emptyData(), storageBlocked = false, route, activeWord = null, draft = null, editingArticle = null, selection = null, toastTimer, fontSaveTimer, pendingTranslation = null, paperSession = null, paperLibrary = [], paperLibraryLoaded = false, paperLibraryLoading = false, paperSaveChain = Promise.resolve(), folderDialogType = 'article';
   const paperTranslationTasks = new Map();
   const assistantSessions = new Map();
+  const assistantSaveChains = new Map();
   let rightPaneMode = 'vocabulary';
   const usageIsForeground=()=>document.visibilityState==='visible'&&document.hasFocus();
   let usageStartedAt = usageIsForeground() ? Date.now() : null;
@@ -145,6 +149,42 @@
     const db=await openPaperDatabase();if(!db)return null;
     try{return await new Promise((resolve,reject)=>{const transaction=db.transaction(PAPER_DB_STORE,mode),request=operation(transaction.objectStore(PAPER_DB_STORE));let result;request.onsuccess=()=>{result=request.result;};request.onerror=()=>reject(request.error||new Error('论文存储失败'));transaction.oncomplete=()=>resolve(result);transaction.onerror=()=>reject(transaction.error||new Error('论文存储失败'));transaction.onabort=()=>reject(transaction.error||new Error('论文存储已取消'));});}
     finally{db.close();}
+  }
+  function openAssistantDatabase(){
+    if(!window.indexedDB)return Promise.resolve(null);
+    return new Promise((resolve,reject)=>{
+      const request=window.indexedDB.open(ASSISTANT_DB_NAME,1);
+      request.onupgradeneeded=()=>{const db=request.result;if(!db.objectStoreNames.contains(ASSISTANT_DB_STORE))db.createObjectStore(ASSISTANT_DB_STORE,{keyPath:'id'});};
+      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error||new Error('无法打开助手对话存储'));
+      request.onblocked=()=>reject(new Error('助手对话存储正在被其他窗口占用'));
+    });
+  }
+  async function assistantStoreRequest(mode,operation){
+    const db=await openAssistantDatabase();if(!db)return null;
+    try{return await new Promise((resolve,reject)=>{const transaction=db.transaction(ASSISTANT_DB_STORE,mode),request=operation(transaction.objectStore(ASSISTANT_DB_STORE));let result;request.onsuccess=()=>{result=request.result;};request.onerror=()=>reject(request.error||new Error('助手对话保存失败'));transaction.oncomplete=()=>resolve(result);transaction.onerror=()=>reject(transaction.error||new Error('助手对话保存失败'));transaction.onabort=()=>reject(transaction.error||new Error('助手对话保存已取消'));});}
+    finally{db.close();}
+  }
+  function fallbackAssistantRecords(){try{const records=JSON.parse(localStorage.getItem(ASSISTANT_FALLBACK_KEY)||'[]');return Array.isArray(records)?records:[];}catch{return [];}}
+  async function allAssistantRecords(){
+    if(window.indexedDB){try{return await assistantStoreRequest('readonly',store=>store.getAll())||[];}catch(error){console.error('Assistant storage read failed',error);}}
+    return fallbackAssistantRecords();
+  }
+  function assistantRecord(conversation){return {id:conversation.id,articleId:conversation.articleId,createdAt:conversation.createdAt,updatedAt:conversation.updatedAt,turns:conversation.turns.map(turn=>({id:turn.id,question:turn.question,answer:turn.answer,reasoning:turn.reasoning,thinking:turn.thinking,status:turn.status,error:turn.error||''}))};}
+  async function writeAssistantRecord(record){
+    if(window.indexedDB)return assistantStoreRequest('readwrite',store=>store.put(record));
+    const records=fallbackAssistantRecords().filter(item=>item.id!==record.id);records.push(record);localStorage.setItem(ASSISTANT_FALLBACK_KEY,JSON.stringify(records));
+  }
+  async function deleteAssistantRecord(id){
+    if(window.indexedDB)return assistantStoreRequest('readwrite',store=>store.delete(id));
+    localStorage.setItem(ASSISTANT_FALLBACK_KEY,JSON.stringify(fallbackAssistantRecords().filter(item=>item.id!==id)));
+  }
+  function saveAssistantConversation(conversation){
+    conversation.updatedAt=new Date().toISOString();
+    const snapshot=assistantRecord(conversation),previous=assistantSaveChains.get(conversation.id)||Promise.resolve();
+    const save=previous.catch(()=>{}).then(()=>writeAssistantRecord(snapshot));assistantSaveChains.set(conversation.id,save);
+    save.catch(error=>{console.error('Assistant conversation save failed',error);toast('助手对话保存失败，请检查浏览器存储空间');});
+    save.then(()=>{if(assistantSaveChains.get(conversation.id)===save)assistantSaveChains.delete(conversation.id);},()=>{if(assistantSaveChains.get(conversation.id)===save)assistantSaveChains.delete(conversation.id);});
+    return save;
   }
   function savePaperSession(session=paperSession){
     if(!session?.file||!window.indexedDB)return Promise.resolve(false);
@@ -533,6 +573,7 @@
     if(e.target.id==='assistant-model'){data.preferences.assistantModel=e.target.value;persist();}
     if(e.target.id==='assistant-thinking'){data.preferences.assistantThinking=e.target.checked;persist();$('#assistant-effort').disabled=!e.target.checked;}
     if(e.target.id==='assistant-effort'){data.preferences.assistantEffort=e.target.value;persist();}
+    if(e.target.id==='assistant-conversation-select'){const state=assistantArticleState(route.id);if(state.conversations.some(item=>item.id===e.target.value)){state.activeId=e.target.value;renderAssistantPane();}}
     if(e.target.matches('[data-move-article]')){const article=data.articles.find(item=>item.id===e.target.dataset.moveArticle);if(article){article.folderId=folderFor('article',e.target.value)?.id||null;article.updatedAt=new Date().toISOString();persist();render();toast('文章已移动');}}
     if(e.target.matches('[data-move-paper]')){movePaperToFolder(e.target.dataset.movePaper,e.target.value).then(()=>{if(route.name==='papers'&&!route.id.startsWith('open/'))render();toast('论文已移动');}).catch(()=>toast('论文移动失败'));}
   });
@@ -768,33 +809,73 @@
     const words=articleWordsInReadingOrder(route.id);
     root.innerHTML=studyWordList(words);localizeDOM(root);
   }
-  function assistantSession(articleId){
-    if(!assistantSessions.has(articleId))assistantSessions.set(articleId,{turns:[],busy:false,draft:''});
+  function assistantArticleState(articleId){
+    if(!assistantSessions.has(articleId))assistantSessions.set(articleId,{conversations:[],activeId:null,loaded:false,loading:null});
     return assistantSessions.get(articleId);
+  }
+  function normalizeAssistantConversation(record,articleId){
+    if(!record||typeof record.id!=='string'||!record.id||record.articleId!==articleId||!Array.isArray(record.turns))return null;
+    const turns=record.turns.filter(turn=>turn&&typeof turn.question==='string'&&typeof turn.answer==='string'&&typeof turn.reasoning==='string').map(turn=>({id:String(turn.id||uid()),question:turn.question,answer:turn.answer,reasoning:turn.reasoning,thinking:turn.thinking===true,status:turn.status==='done'?'done':'error',error:turn.status==='busy'?t('assistantInterrupted'):String(turn.error||'')}));
+    return {id:record.id,articleId,createdAt:record.createdAt||new Date().toISOString(),updatedAt:record.updatedAt||record.createdAt||new Date().toISOString(),turns,busy:false,draft:''};
+  }
+  async function loadAssistantArticle(articleId,state){
+    try{
+      const records=await allAssistantRecords();
+      if(assistantSessions.get(articleId)!==state)return;
+      if(!data.articles.some(item=>item.id===articleId))return;
+      state.conversations=records.map(record=>normalizeAssistantConversation(record,articleId)).filter(Boolean).sort((left,right)=>right.updatedAt.localeCompare(left.updatedAt));
+      if(!state.conversations.length){const now=new Date().toISOString(),conversation={id:uid(),articleId,createdAt:now,updatedAt:now,turns:[],busy:false,draft:''};state.conversations.push(conversation);saveAssistantConversation(conversation);}
+      state.activeId=state.conversations[0].id;state.loaded=true;
+    }catch(error){console.error('Assistant conversation load failed',error);state.loaded=true;state.conversations=[];toast('无法读取已保存的助手对话');}
+    if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant')renderAssistantPane();
+  }
+  function activeAssistantConversation(state){return state.conversations.find(item=>item.id===state.activeId)||state.conversations[0]||null;}
+  function assistantConversationLabel(conversation){
+    const first=conversation.turns[0]?.question?.trim();
+    const when=new Date(conversation.createdAt);const dateLabel=Number.isNaN(when.getTime())?'':when.toLocaleString(locale(),{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return `${dateLabel}${dateLabel?' · ':''}${first?first.slice(0,32):t('assistantNewConversation')}`;
+  }
+  function createAssistantConversation(articleId){
+    const state=assistantArticleState(articleId);if(!state.loaded)return;
+    if(!activeAssistantConversation(state)?.turns.length){$('#assistant-question')?.focus();return;}
+    const now=new Date().toISOString(),conversation={id:uid(),articleId,createdAt:now,updatedAt:now,turns:[],busy:false,draft:''};
+    state.conversations.unshift(conversation);state.activeId=conversation.id;saveAssistantConversation(conversation);renderAssistantPane();$('#assistant-question')?.focus();
+  }
+  async function deleteAssistantArticle(articleId){
+    const pending=assistantArticleState(articleId).conversations.map(item=>assistantSaveChains.get(item.id)).filter(Boolean);
+    await Promise.allSettled(pending);
+    const records=(await allAssistantRecords()).filter(item=>item.articleId===articleId);
+    for(const record of records)await deleteAssistantRecord(record.id);
+    assistantSessions.delete(articleId);
   }
   function assistantTurnHTML(turn){
     return `<div class="assistant-turn" data-assistant-turn="${escapeHTML(turn.id)}"><div class="assistant-message assistant-question"><span class="assistant-speaker">${t('assistantYou')}</span><p>${escapeHTML(turn.question)}</p></div><div class="assistant-message assistant-response"><span class="assistant-speaker">${t('assistantTitle')}</span>${turn.thinking?`<details class="assistant-reasoning" ${turn.reasoning?'open':''}><summary>${t('assistantReasoning')}</summary><div class="assistant-reasoning-text">${escapeHTML(turn.reasoning)}</div></details>`:''}<div class="assistant-answer">${escapeHTML(turn.answer)}</div><div class="assistant-status" role="status">${escapeHTML(turn.status==='error'?turn.error:turn.status==='busy'?t('assistantWorking'):'')}</div></div></div>`;
   }
   function renderAssistantPane(){
     const root=$('#notes-body'),article=currentArticle();if(!root||!article)return;
-    const session=assistantSession(article.id),pref=data.preferences;
-    root.innerHTML=`<section class="assistant-panel"><div class="assistant-controls"><label>${t('assistantModel')}<select id="assistant-model"><option value="deepseek-flash" ${pref.assistantModel==='deepseek-flash'?'selected':''}>DeepSeek Flash</option><option value="deepseek-v4-pro" ${pref.assistantModel==='deepseek-v4-pro'?'selected':''}>DeepSeek V4 Pro</option></select></label><label class="assistant-thinking-label"><input id="assistant-thinking" type="checkbox" ${pref.assistantThinking?'checked':''}>${t('assistantThinking')}</label><label>${t('assistantEffort')}<select id="assistant-effort" ${pref.assistantThinking?'':'disabled'}><option value="low" ${pref.assistantEffort==='low'?'selected':''}>${t('assistantLow')}</option><option value="high" ${pref.assistantEffort==='high'?'selected':''}>${t('assistantHigh')}</option><option value="max" ${pref.assistantEffort==='max'?'selected':''}>${t('assistantMax')}</option></select></label></div><div class="assistant-conversation" id="assistant-conversation" role="log" aria-live="polite">${session.turns.length?session.turns.map(assistantTurnHTML).join(''):`<div class="assistant-empty"><strong>${t('assistantAskAboutArticle')}</strong><p>${t('assistantGroundedHint')}</p></div>`}</div>${deepseekApiKey?`<form class="assistant-compose" id="assistant-form"><label class="sr-only" for="assistant-question">${t('assistantQuestion')}</label><textarea id="assistant-question" maxlength="4000" rows="3" placeholder="${t('assistantPlaceholder')}">${escapeHTML(session.draft)}</textarea><div><span>${t('assistantEnterHint')}</span><button class="button primary" type="submit" ${session.busy?'disabled':''}>${t('assistantSend')}</button></div></form>`:`<div class="assistant-key-needed"><p>${t('assistantKeyNeeded')}</p><button class="button" type="button" data-open-assistant-settings>${t('paperGoSettings')}</button></div>`}</section>`;
+    const state=assistantArticleState(article.id);
+    if(!state.loaded){root.innerHTML=`<div class="assistant-loading" role="status">${t('assistantLoading')}</div>`;if(!state.loading)state.loading=loadAssistantArticle(article.id,state);return;}
+    const session=activeAssistantConversation(state),pref=data.preferences;if(!session)return;
+    root.innerHTML=`<section class="assistant-panel"><div class="assistant-conversation-picker"><label for="assistant-conversation-select">${t('assistantConversations')}</label><select id="assistant-conversation-select" aria-label="${t('assistantConversations')}">${state.conversations.map(item=>`<option value="${escapeHTML(item.id)}" ${item.id===session.id?'selected':''}>${escapeHTML(assistantConversationLabel(item))}</option>`).join('')}</select><button class="button" type="button" data-new-assistant-conversation>${t('assistantNewConversation')}</button></div><div class="assistant-controls"><label>${t('assistantModel')}<select id="assistant-model"><option value="deepseek-flash" ${pref.assistantModel==='deepseek-flash'?'selected':''}>DeepSeek Flash</option><option value="deepseek-v4-pro" ${pref.assistantModel==='deepseek-v4-pro'?'selected':''}>DeepSeek V4 Pro</option></select></label><label class="assistant-thinking-label"><input id="assistant-thinking" type="checkbox" ${pref.assistantThinking?'checked':''}>${t('assistantThinking')}</label><label>${t('assistantEffort')}<select id="assistant-effort" ${pref.assistantThinking?'':'disabled'}><option value="low" ${pref.assistantEffort==='low'?'selected':''}>${t('assistantLow')}</option><option value="high" ${pref.assistantEffort==='high'?'selected':''}>${t('assistantHigh')}</option><option value="max" ${pref.assistantEffort==='max'?'selected':''}>${t('assistantMax')}</option></select></label></div><div class="assistant-conversation" id="assistant-conversation" role="log" aria-live="polite">${session.turns.length?session.turns.map(assistantTurnHTML).join(''):`<div class="assistant-empty"><strong>${t('assistantAskAboutArticle')}</strong><p>${t('assistantGroundedHint')}</p></div>`}</div>${deepseekApiKey?`<form class="assistant-compose" id="assistant-form"><label class="sr-only" for="assistant-question">${t('assistantQuestion')}</label><textarea id="assistant-question" maxlength="4000" rows="3" placeholder="${t('assistantPlaceholder')}">${escapeHTML(session.draft)}</textarea><div><span>${t('assistantEnterHint')}</span><button class="button primary" type="submit" ${session.busy?'disabled':''}>${t('assistantSend')}</button></div></form>`:`<div class="assistant-key-needed"><p>${t('assistantKeyNeeded')}</p><button class="button" type="button" data-open-assistant-settings>${t('paperGoSettings')}</button></div>`}</section>`;
     $('#assistant-question',root)?.addEventListener('input',event=>{session.draft=event.target.value;});
     $('#assistant-question',root)?.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();$('#assistant-form',root).requestSubmit();}});
-    $('#assistant-form',root)?.addEventListener('submit',event=>{event.preventDefault();submitAssistantQuestion(article.id);});
+    $('#assistant-form',root)?.addEventListener('submit',event=>{event.preventDefault();submitAssistantQuestion(article.id,session.id);});
     $('#assistant-conversation',root)?.scrollTo?.({top:$('#assistant-conversation',root).scrollHeight});
   }
-  async function submitAssistantQuestion(articleId){
-    const article=data.articles.find(item=>item.id===articleId),session=assistantSession(articleId),question=session.draft.trim();
+  async function submitAssistantQuestion(articleId,conversationId){
+    const article=data.articles.find(item=>item.id===articleId),state=assistantArticleState(articleId),session=state.conversations.find(item=>item.id===conversationId),question=session?.draft.trim();
     if(!article||!question||session.busy||!deepseekApiKey)return;
     const history=session.turns.filter(turn=>turn.status==='done').flatMap(turn=>[{role:'user',content:turn.question.slice(0,12000)},{role:'assistant',content:turn.answer.slice(0,12000)}]).slice(-12);
     const turn={id:uid(),question,answer:'',reasoning:'',thinking:data.preferences.assistantThinking,status:'busy',error:''};
     const payload={apiKey:deepseekApiKey,title:article.title,source:article.source,text:article.body,question,history,language:locale(),model:data.preferences.assistantModel,thinking:data.preferences.assistantThinking,reasoningEffort:data.preferences.assistantEffort};
-    session.turns.push(turn);session.busy=true;session.draft='';if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant')renderAssistantPane();
+    session.turns.push(turn);session.busy=true;session.draft='';if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant'&&state.activeId===conversationId)renderAssistantPane();
+    await saveAssistantConversation(session).catch(()=>{});
+    let saveTimer=null;const saveSoon=()=>{if(!saveTimer)saveTimer=setTimeout(()=>{saveTimer=null;saveAssistantConversation(session);},1200);};
     const update=(event)=>{
       if(event.type==='reasoning')turn.reasoning+=event.text;
       if(event.type==='content')turn.answer+=event.text;
-      if(route.name!=='study'||route.id!==articleId||rightPaneMode!=='assistant')return;
+      saveSoon();
+      if(route.name!=='study'||route.id!==articleId||rightPaneMode!=='assistant'||state.activeId!==conversationId)return;
       const element=$(`[data-assistant-turn="${turn.id}"]`);if(!element)return;
       if(event.type==='reasoning'){const details=$('.assistant-reasoning',element);if(details){details.open=true;$('.assistant-reasoning-text',details).textContent=turn.reasoning;}}
       if(event.type==='content')$('.assistant-answer',element).textContent=turn.answer;
@@ -802,7 +883,7 @@
     };
     try{const result=await apiPostStream('/api/deepseek/ask-article-stream',payload,update);turn.answer=result.answer;turn.reasoning=result.reasoning||turn.reasoning;turn.status='done';}
     catch(error){turn.status='error';turn.error=error.message||t('assistantFailed');}
-    finally{session.busy=false;if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant')renderAssistantPane();}
+    finally{if(saveTimer)clearTimeout(saveTimer);session.busy=false;if(data.articles.some(item=>item.id===articleId))await saveAssistantConversation(session).catch(()=>{});if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant')renderAssistantPane();}
   }
   function openWord(id) {
     activeWord=id;draft=null;rightPaneMode='vocabulary';removeSelection();
@@ -930,6 +1011,7 @@
     const button=e.target.closest('button,[data-highlight-word]');if(!button)return;
     const toolMenu=button.closest('.study-tools');if(toolMenu)toolMenu.open=false;
     if(button.dataset.sideTab){rightPaneMode=button.dataset.sideTab;activeWord=null;draft=null;renderNotes();return;}
+    if(button.hasAttribute('data-new-assistant-conversation')){createAssistantConversation(route.id);return;}
     if(button.hasAttribute('data-open-assistant-settings')){$('#settings-dialog').showModal();$('#deepseek-api-key').focus();return;}
     if(button.hasAttribute('data-new-article'))articleDialog();
     if(button.dataset.newFolder)openFolderDialog(button.dataset.newFolder);
@@ -945,7 +1027,7 @@
     if(button.dataset.openArticle)location.hash=`study/${button.dataset.openArticle}`;
     if(button.dataset.editArticle)editArticle(button.dataset.editArticle);
     if(button.hasAttribute('data-cancel-article-edit'))finishArticleEdit();
-    if(button.dataset.deleteArticle){const id=button.dataset.deleteArticle;confirmAction('删除这篇文章？','文章将被删除，已记录的词汇与笔记会保留在词汇库中。',()=>{data.articles=data.articles.filter(a=>a.id!==id);assistantSessions.delete(id);data.words.forEach(w=>{if(w.articleId===id)w.articleId=null;});persist();render();toast('文章已删除，词汇已保留');});}
+    if(button.dataset.deleteArticle){const id=button.dataset.deleteArticle;confirmAction('删除这篇文章？','文章将被删除，已记录的词汇与笔记会保留在词汇库中。',()=>{data.articles=data.articles.filter(a=>a.id!==id);deleteAssistantArticle(id).catch(error=>console.error('Assistant cleanup failed',error));data.words.forEach(w=>{if(w.articleId===id)w.articleId=null;});persist();render();toast('文章已删除，词汇已保留');});}
     if(button.hasAttribute('data-new-word'))newWord();
     if(button.dataset.openWord)openWord(button.dataset.openWord);
     if(button.dataset.highlightWord){if(window.getSelection()?.toString())return;openWord(button.dataset.highlightWord);}
@@ -967,11 +1049,13 @@
   $('#backup-button').onclick=()=>$('#backup-dialog').showModal();
   $('#settings-button').onclick=()=>$('#settings-dialog').showModal();
   $('#settings-backup-button').onclick=()=>{$('#settings-dialog').close();$('#backup-dialog').showModal();};
-  function exportData(){
-    const blob=new Blob([JSON.stringify({...data,exportedAt:new Date().toISOString()},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`阅读与翻译备份-${new Date().toISOString().slice(0,10)}.json`;a.hidden=true;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('已发起备份下载，请在浏览器下载列表中确认');}
+  async function backupSnapshot(){await Promise.allSettled([...assistantSaveChains.values()]);return {...data,assistantConversations:await allAssistantRecords(),exportedAt:new Date().toISOString()};}
+  async function exportData(){
+    try{const blob=new Blob([JSON.stringify(await backupSnapshot(),null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`阅读与翻译备份-${new Date().toISOString().slice(0,10)}.json`;a.hidden=true;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('已发起备份下载，请在浏览器下载列表中确认');}
+    catch(error){console.error('Backup export failed',error);toast('备份导出失败，请重试');}}
   $('#export-button').onclick=exportData;
   $('#import-button').onclick=()=>$('#import-file').click();
-  $('#backup-text-button').onclick=()=>{$('#backup-text').value=JSON.stringify({...data,exportedAt:new Date().toISOString()},null,2);$('#backup-text-panel').hidden=false;};
+  $('#backup-text-button').onclick=async()=>{try{$('#backup-text').value=JSON.stringify(await backupSnapshot(),null,2);$('#backup-text-panel').hidden=false;}catch(error){console.error('Backup text failed',error);toast('备份文本生成失败，请重试');}};
   $('#copy-backup-button').onclick=async()=>{try{await navigator.clipboard.writeText($('#backup-text').value);toast('备份文本已复制，请保存为 .json 文件');}catch{$('#backup-text').focus();$('#backup-text').select();toast('请按 Ctrl+C 复制已选中的备份文本');}};
   $('#backup-dialog').addEventListener('close',()=>{$('#backup-text-panel').hidden=true;$('#backup-text').value='';});
   function mergeBackup(incoming){
@@ -980,18 +1064,30 @@
     for(const a of incoming.articles){const prepared={...a,folderId:a.folderId?folderRemap.get(a.folderId)||null:null},existing=data.articles.find(x=>x.id===a.id);if(!existing){data.articles.push(prepared);articleRemap.set(a.id,a.id);addedArticles++;}else if(existing.title===a.title&&existing.source===a.source&&existing.body===a.body&&existing.translationTitle===a.translationTitle&&existing.translation===a.translation){articleRemap.set(a.id,a.id);}else{const copy={...prepared,id:uid(),title:`${a.title.slice(0,190)}（导入）`};data.articles.push(copy);articleRemap.set(a.id,copy.id);addedArticles++;}}
     for(const w of incoming.words){const articleId=w.articleId?articleRemap.get(w.articleId):null;const same=data.words.find(x=>x.articleId===articleId&&['term','zh','en','note','context'].every(k=>x[k]===w[k]));if(same)continue;const newWord={...w,articleId,id:data.words.some(x=>x.id===w.id)?uid():w.id};data.words.push(newWord);addedWords++;}
     for(const [day,value] of Object.entries(incoming.activity.usageByDate))data.activity.usageByDate[day]=Math.max(data.activity.usageByDate[day]||0,value);
-    return {addedArticles,addedWords};
+    return {addedArticles,addedWords,articleRemap};
   }
-  function importBackupText(text){
+  async function importBackupText(text){
     if(storageBlocked)throw new Error('当前存储不可用，请先处理保存异常');
-    const incoming=validate(JSON.parse(text.replace(/^\uFEFF/,'')));
+    const parsed=JSON.parse(text.replace(/^\uFEFF/,'')),incoming=validate(parsed),rawConversations=parsed.assistantConversations||[];
+    if(!Array.isArray(rawConversations)||rawConversations.length>5000)throw new Error('助手对话备份格式不正确');
+    const incomingArticleIds=new Set(incoming.articles.map(item=>item.id));
+    for(const item of rawConversations){if(!item||typeof item.id!=='string'||!item.id||item.id.length>200||!incomingArticleIds.has(item.articleId)||!Array.isArray(item.turns)||item.turns.length>1000||item.turns.some(turn=>!turn||typeof turn.question!=='string'||turn.question.length>4000||typeof turn.answer!=='string'||turn.answer.length>100000||typeof turn.reasoning!=='string'||turn.reasoning.length>200000))throw new Error('助手对话备份格式不正确');}
     const isEmpty=!data.articles.length&&!data.words.length;
     const counts=mergeBackup(incoming);
     if(isEmpty)data.preferences={...incoming.preferences};
-    const saved=persist();$('#backup-dialog').close();render();
-    toast(saved?`已导入 ${counts.addedArticles} 篇文章、${counts.addedWords} 条词汇`:'已导入但保存失败，请立即导出备份');
+    const saved=persist();if(!saved)throw new Error('文章保存失败，请立即导出备份');
+    const existing=new Map((await allAssistantRecords()).map(item=>[item.id,item]));let addedConversations=0;
+    for(const item of rawConversations){
+      const record=normalizeAssistantConversation({...item,articleId:counts.articleRemap.get(item.articleId)},counts.articleRemap.get(item.articleId));if(!record)continue;
+      const prior=existing.get(record.id);
+      if(prior?.articleId===record.articleId){if(String(prior.updatedAt||'')>=record.updatedAt)continue;}
+      else if(prior)record.id=uid();
+      const snapshot=assistantRecord(record);await writeAssistantRecord(snapshot);existing.set(record.id,snapshot);addedConversations++;
+    }
+    assistantSessions.clear();$('#backup-dialog').close();render();
+    toast(`已导入 ${counts.addedArticles} 篇文章、${counts.addedWords} 条词汇、${addedConversations} 段对话`);
   }
-  $('#import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>30*1024*1024)throw new Error('备份文件超过 30 MB');importBackupText(await file.text());}catch(error){toast(`无法导入：${error.message}`);}finally{e.target.value='';}});
+  $('#import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>30*1024*1024)throw new Error('备份文件超过 30 MB');await importBackupText(await file.text());}catch(error){toast(`无法导入：${error.message}`);}finally{e.target.value='';}});
 
   window.addEventListener('storage',e=>{if(e.key===KEY){storageBlocked=true;storageWarning('另一个窗口修改了数据。当前窗口已暂停保存，请先导出备份，再刷新以载入最新内容。');}});
   window.addEventListener('hashchange',render);render();
