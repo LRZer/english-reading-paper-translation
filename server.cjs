@@ -2,7 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { DeepSeekError, testConnection, translateArticle, translateArticleStream } = require('./deepseek-api.cjs');
+const { DeepSeekError, testConnection, translateArticle, translateArticleStream, askArticleAssistant } = require('./deepseek-api.cjs');
 const dictionary = require('./dictionary-service.cjs');
 const { PaperExtractionError, extractPaper } = require('./paper-extractor.cjs');
 const PORT = Number(process.env.SHICI_PORT) || 4173;
@@ -64,6 +64,21 @@ async function handleTranslationStream(req,res){
   }catch(error){send({type:'error',error:error instanceof DeepSeekError?error.message:'翻译服务发生意外错误。',code:error instanceof DeepSeekError?error.code:'internal_error'});}
   if(!res.writableEnded)res.end();
 }
+async function handleArticleAssistantStream(req,res){
+  if(req.method!=='POST'){json(res,405,{error:'仅支持 POST 请求。'});return;}
+  if(!allowedOrigin(req)){json(res,403,{error:'不允许从其他网站调用本机 AI 助手接口。'});return;}
+  if(!String(req.headers['content-type']||'').toLowerCase().startsWith('application/json')){json(res,415,{error:'请求必须使用 JSON 格式。'});return;}
+  let body;
+  try{body=await readJson(req);}
+  catch(error){json(res,error instanceof DeepSeekError?error.status:400,{error:error.message||'请求格式不正确。',code:error.code||'invalid_json'});return;}
+  res.writeHead(200,{'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','X-Accel-Buffering':'no'});
+  const send=payload=>{if(!res.destroyed&&!res.writableEnded)res.write(`${JSON.stringify(payload)}\n`);};
+  try{
+    const result=await askArticleAssistant({apiKey:body.apiKey,title:body.title,text:body.text,source:body.source,question:body.question,history:body.history,language:body.language,model:body.model,thinking:body.thinking,reasoningEffort:body.reasoningEffort,onChunk:send});
+    send({type:'complete',result});
+  }catch(error){send({type:'error',error:error instanceof DeepSeekError?error.message:'AI 助手发生意外错误。',code:error instanceof DeepSeekError?error.code:'internal_error'});}
+  if(!res.writableEnded)res.end();
+}
 async function handlePaperApi(req,res){
   if(req.method!=='POST'){json(res,405,{error:'仅支持 POST 请求。'});return;}
   if(!allowedOrigin(req)){json(res,403,{error:'不允许从其他网站调用本机论文解析接口。'});return;}
@@ -99,6 +114,7 @@ const server = http.createServer((req,res) => {
   const url = new URL(req.url,'http://127.0.0.1');
   if(url.pathname==='/api/deepseek/test'||url.pathname==='/api/deepseek/translate'){handleApi(req,res,url);return;}
   if(url.pathname==='/api/deepseek/translate-stream'){handleTranslationStream(req,res);return;}
+  if(url.pathname==='/api/deepseek/ask-article-stream'){handleArticleAssistantStream(req,res);return;}
   if(url.pathname==='/api/paper/extract'){handlePaperApi(req,res);return;}
   if(url.pathname==='/api/dictionary/status'||url.pathname==='/api/dictionary/lookup'||url.pathname==='/api/dictionary/resource'){handleDictionary(req,res,url);return;}
   if(url.pathname === '/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end('{"app":"shici-notebook","version":1}');return;}

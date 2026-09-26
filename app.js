@@ -25,7 +25,7 @@
   const fontSize = (value, fallback) => Number.isFinite(Number(value)) && Number(value) > 0 ? Math.round(Math.min(FONT_MAX,Math.max(FONT_MIN,Number(value)))*10)/10 : fallback;
   const paddingSize = (value, fallback) => Number.isFinite(Number(value)) ? Math.round(Math.min(PADDING_MAX,Math.max(PADDING_MIN,Number(value)))) : fallback;
   const lineHeightValue = (value, fallback) => Number.isFinite(Number(value)) ? Math.round(Math.min(LINE_HEIGHT_MAX,Math.max(LINE_HEIGHT_MIN,Number(value)))*20)/20 : fallback;
-  const emptyData = () => ({version:1, folders:[], articles:[], words:[], activity:{usageByDate:{}}, preferences:{language:'zh-CN',split:59,fontSize:19,notesFontSize:16,dictionaryFontSize:13.5,readingLineHeight:1.95,readingBackground:'white',showTranslation:false,highlightWords:false,quickAddWords:true,readingPaddingTop:24,readingPaddingRight:40,readingPaddingBottom:48,readingPaddingLeft:40}});
+  const emptyData = () => ({version:1, folders:[], articles:[], words:[], activity:{usageByDate:{}}, preferences:{language:'zh-CN',split:59,fontSize:19,notesFontSize:16,dictionaryFontSize:13.5,readingLineHeight:1.95,readingBackground:'white',showTranslation:false,highlightWords:false,quickAddWords:true,assistantModel:'deepseek-flash',assistantThinking:false,assistantEffort:'high',readingPaddingTop:24,readingPaddingRight:40,readingPaddingBottom:48,readingPaddingLeft:40}});
   let deepseekApiKey='';
   try { deepseekApiKey=localStorage.getItem(DEEPSEEK_STORAGE_KEY)||''; } catch {}
   if(!deepseekApiKey){
@@ -37,6 +37,8 @@
   let apiConnectionStatus='';
   let data = emptyData(), storageBlocked = false, route, activeWord = null, draft = null, editingArticle = null, selection = null, toastTimer, fontSaveTimer, pendingTranslation = null, paperSession = null, paperLibrary = [], paperLibraryLoaded = false, paperLibraryLoading = false, paperSaveChain = Promise.resolve(), folderDialogType = 'article';
   const paperTranslationTasks = new Map();
+  const assistantSessions = new Map();
+  let rightPaneMode = 'vocabulary';
   const usageIsForeground=()=>document.visibilityState==='visible'&&document.hasFocus();
   let usageStartedAt = usageIsForeground() ? Date.now() : null;
   const app = $('#app');
@@ -71,7 +73,7 @@
       if(/^\d{4}-\d{2}-\d{2}$/.test(day)&&Number.isFinite(Number(value))&&Number(value)>=0)usageByDate[day]=Math.min(Number(value),86400000);
     }
     const readingBackground=READING_BACKGROUNDS.some(option=>option.id===raw.preferences?.readingBackground)?raw.preferences.readingBackground:'white';
-    return {version:1,folders,articles,words,activity:{usageByDate},preferences:{language:I18N.supported(raw.preferences?.language),split:Math.min(72,Math.max(35,Number(raw.preferences?.split)||59)),fontSize:fontSize(raw.preferences?.fontSize,19),notesFontSize:fontSize(raw.preferences?.notesFontSize,16),dictionaryFontSize:fontSize(raw.preferences?.dictionaryFontSize,13.5),readingLineHeight:lineHeightValue(raw.preferences?.readingLineHeight,1.95),readingBackground,showTranslation:raw.preferences?.showTranslation===true,highlightWords:raw.preferences?.highlightWords===true,quickAddWords:raw.preferences?.quickAddWords!==false,readingPaddingTop:paddingSize(raw.preferences?.readingPaddingTop,24),readingPaddingRight:paddingSize(raw.preferences?.readingPaddingRight,40),readingPaddingBottom:paddingSize(raw.preferences?.readingPaddingBottom,48),readingPaddingLeft:paddingSize(raw.preferences?.readingPaddingLeft,40)}};
+    return {version:1,folders,articles,words,activity:{usageByDate},preferences:{language:I18N.supported(raw.preferences?.language),split:Math.min(72,Math.max(35,Number(raw.preferences?.split)||59)),fontSize:fontSize(raw.preferences?.fontSize,19),notesFontSize:fontSize(raw.preferences?.notesFontSize,16),dictionaryFontSize:fontSize(raw.preferences?.dictionaryFontSize,13.5),readingLineHeight:lineHeightValue(raw.preferences?.readingLineHeight,1.95),readingBackground,showTranslation:raw.preferences?.showTranslation===true,highlightWords:raw.preferences?.highlightWords===true,quickAddWords:raw.preferences?.quickAddWords!==false,assistantModel:['deepseek-flash','deepseek-v4-pro'].includes(raw.preferences?.assistantModel)?raw.preferences.assistantModel:'deepseek-flash',assistantThinking:raw.preferences?.assistantThinking===true,assistantEffort:['low','high','max'].includes(raw.preferences?.assistantEffort)?raw.preferences.assistantEffort:'high',readingPaddingTop:paddingSize(raw.preferences?.readingPaddingTop,24),readingPaddingRight:paddingSize(raw.preferences?.readingPaddingRight,40),readingPaddingBottom:paddingSize(raw.preferences?.readingPaddingBottom,48),readingPaddingLeft:paddingSize(raw.preferences?.readingPaddingLeft,40)}};
   }
   try {
     const saved=localStorage.getItem(KEY);
@@ -83,7 +85,7 @@
   const originalText=new WeakMap(),originalAttributes=new WeakMap();
   function localizeDOM(root=document){
     const lang=locale();document.documentElement.lang=lang;document.documentElement.dir=I18N.direction(lang);document.body.classList.toggle('rtl-ui',I18N.direction(lang)==='rtl');
-    const skip='.article-text,.article-translation,.article-title-translation,.article-content>h2,.article-card h3,.article-preview,.article-source,.article-source-detail,.header-study,.word-term,.definition,.study-word-copy,.context,.saved-article-row strong,.longman-definition,.paper-translation-document';
+    const skip='.article-text,.article-translation,.article-title-translation,.article-content>h2,.article-card h3,.article-preview,.article-source,.article-source-detail,.header-study,.word-term,.definition,.study-word-copy,.context,.saved-article-row strong,.longman-definition,.paper-translation-document,.assistant-message';
     const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;
     while((node=walker.nextNode())){
       if(node.parentElement?.closest(skip))continue;
@@ -524,10 +526,13 @@
     $('.mobile-navigation').open=false;
     localizeDOM();
   }
-  document.addEventListener('input',e=>{if(e.target.matches('[data-font-target]'))updateFont(e.target);if(e.target.matches('[data-padding-target]'))updatePadding(e.target);if(e.target.matches('[data-line-height]'))updateLineHeight(e.target);if(e.target.id==='deepseek-api-key'){deepseekApiKey=e.target.value.trim();apiConnectionStatus=deepseekApiKey?t('apiKeyReady'):t('apiKeyEmpty');try{if(deepseekApiKey)localStorage.setItem(DEEPSEEK_STORAGE_KEY,deepseekApiKey);else localStorage.removeItem(DEEPSEEK_STORAGE_KEY);sessionStorage.removeItem(DEEPSEEK_STORAGE_KEY);}catch{}const status=$('#deepseek-status');if(status){status.textContent=apiConnectionStatus;status.className='api-status';}}});
+  document.addEventListener('input',e=>{if(e.target.matches('[data-font-target]'))updateFont(e.target);if(e.target.matches('[data-padding-target]'))updatePadding(e.target);if(e.target.matches('[data-line-height]'))updateLineHeight(e.target);if(e.target.id==='deepseek-api-key'){deepseekApiKey=e.target.value.trim();apiConnectionStatus=deepseekApiKey?t('apiKeyReady'):t('apiKeyEmpty');try{if(deepseekApiKey)localStorage.setItem(DEEPSEEK_STORAGE_KEY,deepseekApiKey);else localStorage.removeItem(DEEPSEEK_STORAGE_KEY);sessionStorage.removeItem(DEEPSEEK_STORAGE_KEY);}catch{}const status=$('#deepseek-status');if(status){status.textContent=apiConnectionStatus;status.className='api-status';}if(route?.name==='study'&&rightPaneMode==='assistant')renderAssistantPane();}});
   document.addEventListener('change',e=>{
     if(e.target.matches('[data-font-target]'))updateFont(e.target,true);if(e.target.matches('[data-padding-target]'))updatePadding(e.target,true);if(e.target.matches('[data-line-height]'))updateLineHeight(e.target,true);
     if(e.target.id==='settings-language'){data.preferences.language=I18N.supported(e.target.value);apiConnectionStatus=deepseekApiKey?t('apiKeyReady'):t('apiKeyEmpty');persist();render();}
+    if(e.target.id==='assistant-model'){data.preferences.assistantModel=e.target.value;persist();}
+    if(e.target.id==='assistant-thinking'){data.preferences.assistantThinking=e.target.checked;persist();$('#assistant-effort').disabled=!e.target.checked;}
+    if(e.target.id==='assistant-effort'){data.preferences.assistantEffort=e.target.value;persist();}
     if(e.target.matches('[data-move-article]')){const article=data.articles.find(item=>item.id===e.target.dataset.moveArticle);if(article){article.folderId=folderFor('article',e.target.value)?.id||null;article.updatedAt=new Date().toISOString();persist();render();toast('文章已移动');}}
     if(e.target.matches('[data-move-paper]')){movePaperToFolder(e.target.dataset.movePaper,e.target.value).then(()=>{if(route.name==='papers'&&!route.id.startsWith('open/'))render();toast('论文已移动');}).catch(()=>toast('论文移动失败'));}
   });
@@ -539,7 +544,7 @@
   });
   function renderStudy() {
     const a=currentArticle();document.title=`${a.title} · 英文阅读与论文翻译`;
-    app.innerHTML=`<div class="study-layout"><section class="reading-pane" aria-label="文章阅读区"></section><div class="splitter" role="separator" aria-label="调整文章和词汇面板宽度" aria-orientation="vertical" aria-valuemin="35" aria-valuemax="72" aria-valuenow="${data.preferences.split}" tabindex="0"></div><aside class="notes-pane" aria-label="词汇笔记"><div class="notes-body" id="notes-body"></div></aside></div>`;
+    app.innerHTML=`<div class="study-layout"><section class="reading-pane" aria-label="文章阅读区"></section><div class="splitter" role="separator" aria-label="调整文章和词汇面板宽度" aria-orientation="vertical" aria-valuemin="35" aria-valuemax="72" aria-valuenow="${data.preferences.split}" tabindex="0"></div><aside class="notes-pane" aria-label="${t('rightPanel')}"><div class="study-side-tabs" role="tablist" aria-label="${t('rightPanel')}"><button type="button" role="tab" data-side-tab="vocabulary">${t('vocabularyLabel')}</button><button type="button" role="tab" data-side-tab="assistant">${t('assistantTitle')}</button></div><div class="notes-body" id="notes-body"></div></aside></div>`;
     renderReadingPane();renderNotes();setupSplitter();
   }
   function renderReadingPane() {
@@ -755,18 +760,58 @@
   }
   function renderNotes() {
     const root=$('#notes-body');if(!root)return;
+    document.querySelectorAll('[data-side-tab]').forEach(button=>{const selected=button.dataset.sideTab===rightPaneMode;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;});
+    $('.notes-pane')?.classList.toggle('assistant-open',rightPaneMode==='assistant');
+    if(rightPaneMode==='assistant'){renderAssistantPane();return;}
     const w=data.words.find(w=>w.id===activeWord)||draft;
     if(w){root.innerHTML=wordForm(w);bindWordForm(root);localizeDOM(root);return;}
     const words=articleWordsInReadingOrder(route.id);
     root.innerHTML=studyWordList(words);localizeDOM(root);
   }
+  function assistantSession(articleId){
+    if(!assistantSessions.has(articleId))assistantSessions.set(articleId,{turns:[],busy:false,draft:''});
+    return assistantSessions.get(articleId);
+  }
+  function assistantTurnHTML(turn){
+    return `<div class="assistant-turn" data-assistant-turn="${escapeHTML(turn.id)}"><div class="assistant-message assistant-question"><span class="assistant-speaker">${t('assistantYou')}</span><p>${escapeHTML(turn.question)}</p></div><div class="assistant-message assistant-response"><span class="assistant-speaker">${t('assistantTitle')}</span>${turn.thinking?`<details class="assistant-reasoning" ${turn.reasoning?'open':''}><summary>${t('assistantReasoning')}</summary><div class="assistant-reasoning-text">${escapeHTML(turn.reasoning)}</div></details>`:''}<div class="assistant-answer">${escapeHTML(turn.answer)}</div><div class="assistant-status" role="status">${escapeHTML(turn.status==='error'?turn.error:turn.status==='busy'?t('assistantWorking'):'')}</div></div></div>`;
+  }
+  function renderAssistantPane(){
+    const root=$('#notes-body'),article=currentArticle();if(!root||!article)return;
+    const session=assistantSession(article.id),pref=data.preferences;
+    root.innerHTML=`<section class="assistant-panel"><div class="assistant-controls"><label>${t('assistantModel')}<select id="assistant-model"><option value="deepseek-flash" ${pref.assistantModel==='deepseek-flash'?'selected':''}>DeepSeek Flash</option><option value="deepseek-v4-pro" ${pref.assistantModel==='deepseek-v4-pro'?'selected':''}>DeepSeek V4 Pro</option></select></label><label class="assistant-thinking-label"><input id="assistant-thinking" type="checkbox" ${pref.assistantThinking?'checked':''}>${t('assistantThinking')}</label><label>${t('assistantEffort')}<select id="assistant-effort" ${pref.assistantThinking?'':'disabled'}><option value="low" ${pref.assistantEffort==='low'?'selected':''}>${t('assistantLow')}</option><option value="high" ${pref.assistantEffort==='high'?'selected':''}>${t('assistantHigh')}</option><option value="max" ${pref.assistantEffort==='max'?'selected':''}>${t('assistantMax')}</option></select></label></div><div class="assistant-conversation" id="assistant-conversation" role="log" aria-live="polite">${session.turns.length?session.turns.map(assistantTurnHTML).join(''):`<div class="assistant-empty"><strong>${t('assistantAskAboutArticle')}</strong><p>${t('assistantGroundedHint')}</p></div>`}</div>${deepseekApiKey?`<form class="assistant-compose" id="assistant-form"><label class="sr-only" for="assistant-question">${t('assistantQuestion')}</label><textarea id="assistant-question" maxlength="4000" rows="3" placeholder="${t('assistantPlaceholder')}">${escapeHTML(session.draft)}</textarea><div><span>${t('assistantEnterHint')}</span><button class="button primary" type="submit" ${session.busy?'disabled':''}>${t('assistantSend')}</button></div></form>`:`<div class="assistant-key-needed"><p>${t('assistantKeyNeeded')}</p><button class="button" type="button" data-open-assistant-settings>${t('paperGoSettings')}</button></div>`}</section>`;
+    $('#assistant-question',root)?.addEventListener('input',event=>{session.draft=event.target.value;});
+    $('#assistant-question',root)?.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();$('#assistant-form',root).requestSubmit();}});
+    $('#assistant-form',root)?.addEventListener('submit',event=>{event.preventDefault();submitAssistantQuestion(article.id);});
+    $('#assistant-conversation',root)?.scrollTo?.({top:$('#assistant-conversation',root).scrollHeight});
+  }
+  async function submitAssistantQuestion(articleId){
+    const article=data.articles.find(item=>item.id===articleId),session=assistantSession(articleId),question=session.draft.trim();
+    if(!article||!question||session.busy||!deepseekApiKey)return;
+    const history=session.turns.filter(turn=>turn.status==='done').flatMap(turn=>[{role:'user',content:turn.question.slice(0,12000)},{role:'assistant',content:turn.answer.slice(0,12000)}]).slice(-12);
+    const turn={id:uid(),question,answer:'',reasoning:'',thinking:data.preferences.assistantThinking,status:'busy',error:''};
+    const payload={apiKey:deepseekApiKey,title:article.title,source:article.source,text:article.body,question,history,language:locale(),model:data.preferences.assistantModel,thinking:data.preferences.assistantThinking,reasoningEffort:data.preferences.assistantEffort};
+    session.turns.push(turn);session.busy=true;session.draft='';if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant')renderAssistantPane();
+    const update=(event)=>{
+      if(event.type==='reasoning')turn.reasoning+=event.text;
+      if(event.type==='content')turn.answer+=event.text;
+      if(route.name!=='study'||route.id!==articleId||rightPaneMode!=='assistant')return;
+      const element=$(`[data-assistant-turn="${turn.id}"]`);if(!element)return;
+      if(event.type==='reasoning'){const details=$('.assistant-reasoning',element);if(details){details.open=true;$('.assistant-reasoning-text',details).textContent=turn.reasoning;}}
+      if(event.type==='content')$('.assistant-answer',element).textContent=turn.answer;
+      const log=$('#assistant-conversation');if(log&&log.scrollHeight-log.scrollTop-log.clientHeight<100)log.scrollTop=log.scrollHeight;
+    };
+    try{const result=await apiPostStream('/api/deepseek/ask-article-stream',payload,update);turn.answer=result.answer;turn.reasoning=result.reasoning||turn.reasoning;turn.status='done';}
+    catch(error){turn.status='error';turn.error=error.message||t('assistantFailed');}
+    finally{session.busy=false;if(route.name==='study'&&route.id===articleId&&rightPaneMode==='assistant')renderAssistantPane();}
+  }
   function openWord(id) {
-    activeWord=id;draft=null;removeSelection();
+    activeWord=id;draft=null;rightPaneMode='vocabulary';removeSelection();
     const w=data.words.find(w=>w.id===id);if(!w)return;
     if(route.name==='study'){renderNotes();renderHighlights();if(innerWidth<=720)$('.notes-pane').scrollIntoView({behavior:'smooth'});}
     else {$('#word-dialog-content').innerHTML=wordForm(w)+ (w.articleId?`<div class="article-words"><a class="text-button" id="word-source" href="#study/${escapeHTML(w.articleId)}">回到来源文章 ↗</a></div>`:'');bindWordForm($('#word-dialog-content'));$('#word-source')?.addEventListener('click',()=>$('#word-dialog').close());localizeDOM($('#word-dialog'));$('#word-dialog').showModal();}
   }
   function newWord(term='',context='') {
+    rightPaneMode='vocabulary';
     const articleId=route.name==='study'?route.id:null;
     const existing=term?data.words.find(w=>w.articleId===articleId&&sameEnglishFamily(w.term,term)):null;
     if(existing&&term){activeWord=data.preferences.quickAddWords?null:existing.id;draft=null;removeSelection();if(route.name==='study'){renderNotes();renderHighlights();if(innerWidth<=720)$('.notes-pane').scrollIntoView({behavior:'smooth'});}toast(data.preferences.quickAddWords?'词汇栏中已有这个词':'已打开这个词的笔记');return;}
@@ -842,7 +887,7 @@
     if(!response.ok){let result;try{result=await response.json();}catch{result=null;}throw new Error(result?.error||'DeepSeek 请求失败，请稍后再试。');}
     if(!response.body?.getReader){let result;try{result=await response.json();}catch{result=null;}if(!result)throw new Error('翻译服务没有返回结果，请重试。');return result;}
     const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',completed=null;
-    const consume=line=>{if(!line.trim())return;let event;try{event=JSON.parse(line);}catch{return;}if(event.type==='progress')onProgress?.(event);else if(event.type==='complete')completed=event.result;else if(event.type==='error')throw new Error(event.error||'DeepSeek 请求失败，请稍后再试。');};
+    const consume=line=>{if(!line.trim())return;let event;try{event=JSON.parse(line);}catch{return;}if(['progress','reasoning','content'].includes(event.type))onProgress?.(event);else if(event.type==='complete')completed=event.result;else if(event.type==='error')throw new Error(event.error||'DeepSeek 请求失败，请稍后再试。');};
     try{while(true){const {done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const lines=buffer.split(/\r?\n/);buffer=lines.pop()||'';for(const line of lines)consume(line);}buffer+=decoder.decode();if(buffer.trim())consume(buffer);}
     finally{reader.releaseLock?.();}
     if(!completed)throw new Error('翻译连接已结束，但没有收到完整译文，请重试。');return completed;
@@ -884,6 +929,8 @@
   document.addEventListener('click',e=>{
     const button=e.target.closest('button,[data-highlight-word]');if(!button)return;
     const toolMenu=button.closest('.study-tools');if(toolMenu)toolMenu.open=false;
+    if(button.dataset.sideTab){rightPaneMode=button.dataset.sideTab;activeWord=null;draft=null;renderNotes();return;}
+    if(button.hasAttribute('data-open-assistant-settings')){$('#settings-dialog').showModal();$('#deepseek-api-key').focus();return;}
     if(button.hasAttribute('data-new-article'))articleDialog();
     if(button.dataset.newFolder)openFolderDialog(button.dataset.newFolder);
     if(button.dataset.deleteFolder)deleteFolder(button.dataset.deleteFolder);
@@ -898,7 +945,7 @@
     if(button.dataset.openArticle)location.hash=`study/${button.dataset.openArticle}`;
     if(button.dataset.editArticle)editArticle(button.dataset.editArticle);
     if(button.hasAttribute('data-cancel-article-edit'))finishArticleEdit();
-    if(button.dataset.deleteArticle){const id=button.dataset.deleteArticle;confirmAction('删除这篇文章？','文章将被删除，已记录的词汇与笔记会保留在词汇库中。',()=>{data.articles=data.articles.filter(a=>a.id!==id);data.words.forEach(w=>{if(w.articleId===id)w.articleId=null;});persist();render();toast('文章已删除，词汇已保留');});}
+    if(button.dataset.deleteArticle){const id=button.dataset.deleteArticle;confirmAction('删除这篇文章？','文章将被删除，已记录的词汇与笔记会保留在词汇库中。',()=>{data.articles=data.articles.filter(a=>a.id!==id);assistantSessions.delete(id);data.words.forEach(w=>{if(w.articleId===id)w.articleId=null;});persist();render();toast('文章已删除，词汇已保留');});}
     if(button.hasAttribute('data-new-word'))newWord();
     if(button.dataset.openWord)openWord(button.dataset.openWord);
     if(button.dataset.highlightWord){if(window.getSelection()?.toString())return;openWord(button.dataset.highlightWord);}
