@@ -1,37 +1,60 @@
 # English Reading & Paper Translation
 
-English | [中文](README.md)
+English · [中文](README.md) · [Full user guide](docs/USER_GUIDE.en.md) · [中文使用手册](docs/使用手册.md)
 
-A local tool for reading English articles, keeping vocabulary notes, and translating research papers. Articles and vocabulary are stored in the browser; paper PDFs, extracted text, and translations are stored in the browser's IndexedDB. The server listens only on `127.0.0.1`.
+A locally run workspace for English reading, vocabulary notes, article-aware AI conversations, and research-paper translation. Papers retain their original PDF layout on the left. Data is saved in the current browser, and the local server listens only on `127.0.0.1`.
 
-## Getting started
+![Running reading view with a real NASA article, Chinese translation, and vocabulary](docs/images/02-reading.png)
 
-Install Node.js and Git LFS, then clone the repository and run:
+> The screenshots use real English texts and research papers in an isolated demo browser. Sources and the prepared example translation and conversation are described [at the end of the guide](docs/USER_GUIDE.en.md#sources-shown-in-the-screenshots).
+
+## What you can do
+
+| Task | Workflow |
+| --- | --- |
+| Read English closely | Add source text to the article library, organize it in folders, compare the translation, and underline saved vocabulary. |
+| Build vocabulary | Select text and press **Ctrl+A**, save Chinese meanings and notes, and expand the bundled Longman dictionary when needed. |
+| Ask and translate | Translate an article with DeepSeek. Each article has saved assistant conversations with Flash / V4 Pro and thinking controls. |
+| Read papers | Import a PDF that saves automatically; use the browser's native PDF viewer on the left and read translated text on the right. Multiple papers can translate concurrently. |
+
+## Run locally
+
+Install **Node.js 24.15+** (or 22.22.2+) and **Git LFS**, then run:
 
 ```powershell
+git clone https://github.com/LRZer/english-reading-paper-translation.git
+cd english-reading-paper-translation
 git lfs install
 git lfs pull
 npm ci
 npm start
 ```
 
-On Windows, you can also double-click `启动阅读与翻译.cmd` after installing dependencies. Open `http://127.0.0.1:4173` in your browser. Use the same browser and address to access your existing local data. Opening `index.html` directly uses a different browser storage area and cannot access the local dictionary or paper extraction API.
+Open **http://127.0.0.1:4173** in a browser and keep the server window running. On Windows, after dependencies are installed, you can also double-click `启动阅读与翻译.cmd`. Opening `index.html` directly cannot use the local dictionary or PDF extraction API and accesses a different browser storage area.
 
-## Features
+> The Longman `.mdx` and `.mdd` files are managed by Git LFS. If the dictionary is unavailable after cloning, run `git lfs pull` and restart the server.
 
-- Separate article and paper libraries, both with folders.
-- Select words while reading, record Chinese meanings and notes, and underline saved words and common inflections in the article.
-- Switch the reading sidebar to an article-aware AI assistant. It opens on the current article's conversation list, where you can resume a saved chat or start a new one. Model and thinking controls sit inside the question composer; choose DeepSeek Flash or V4 Pro, set reasoning effort, and inspect returned reasoning when enabled. Conversations remain separate for each article.
-- Read the original PDF in the browser's built-in viewer on the left and the full translation on the right. Multiple papers can be translated concurrently, and results are saved even if you leave the current paper.
-- Separate DeepSeek prompts for articles and papers. Enter an API key in Settings and test the connection. The key is stored only in this browser's local storage, not in project files or data exports.
-- Adjust the reading background, font size, line spacing, page margins, and dictionary font size.
-- Consult the bundled local Longman dictionary from a vocabulary entry. Its large files are managed with Git LFS; run `git lfs pull` after cloning or the dictionary will not load. Alternatively, set `READING_DICTIONARY_DIR` to a directory containing `LDOCE5++ V 1-35.mdx` and `LDOCE5++ V 1-35.mdd`.
+## A first session
 
-Paper import supports English PDFs with a selectable text layer. Images, tables, and formulas remain visible in the original PDF on the left; scanned PDFs are not OCR-processed. Translation uses text extracted from the PDF, so extraction quality affects the result. AI translation sends article text or extracted paper text to DeepSeek. Asking the article assistant sends the current article and conversation context.
+1. Open **Article Library → Add article** and enter a title and English text. Source, folder, translated title, and translation are optional.
+2. Open the article, select a word in the source, and press **Ctrl+A**. Record its Chinese meaning and a note in the right pane; expand **Longman Dictionary** if useful.
+3. Before using AI, enter a DeepSeek API key in **Settings** and test the connection. Article translation is under **Tools**; the right sidebar has **AI Assistant**.
+4. Open **Paper Library**, select **Add paper**, or drop in a PDF. The original appears on the left and translation controls on the right.
 
-## Local data and backups
+The [full illustrated user guide →](docs/USER_GUIDE.en.md) shows each control, state, and troubleshooting step with screenshots from the running app.
 
-Articles, vocabulary, folders, and settings are stored in the browser's localStorage. Paper PDFs, extracted text, translations, and AI assistant conversations are stored in IndexedDB. The app's JSON backup includes assistant conversations, but not paper PDFs. The `保留的数据/` directory contains private backups and is excluded from Git. Clearing browser data deletes these records, so export backups from the app regularly.
+| Article and vocabulary | Paper and original PDF |
+| --- | --- |
+| ![Vocabulary note alongside a sourced article](docs/images/03-vocabulary-note.png) | ![Real research PDF and translation action](docs/images/07-paper-reader.png) |
+
+## AI, PDFs, and local data
+
+- Article and paper translation use separate prompts. You can review and edit an article translation before saving. Paper translation shows its phase and paragraph progress. The article assistant opens on a conversation list so you can resume an old chat or start a new one.
+- Paper import supports **English PDFs with a selectable text layer, up to 50 MB each**. Scanned PDFs are not OCR-processed. Figures, tables, and formulas remain in the original PDF; the right pane focuses on extracted body text. Extraction order affects translation quality.
+- Articles, vocabulary, folders, and settings use browser `localStorage`; paper PDFs, extraction results, translations, and assistant conversations use `IndexedDB`. AI requests send the relevant article text, extracted paper text, or conversation context to DeepSeek.
+- The DeepSeek API key remains in the **current browser** and is not saved in project files or exported backups. The app's JSON backup includes articles, vocabulary, and assistant chats, but **not paper PDFs, extraction results, or translations**. Keep the original paper files separately.
+
+Browser storage can differ when you switch browsers or site addresses. Keep using `127.0.0.1:4173` and regularly export a backup with the **↥** button. See [Backup and restore](docs/USER_GUIDE.en.md#6-back-up-and-restore) for details.
 
 ## Development and repository notes
 
@@ -39,6 +62,6 @@ Articles, vocabulary, folders, and settings are stored in the browser's localSto
 npm test
 ```
 
-The `.gitattributes` file routes dictionary `.mdx` and `.mdd` files through Git LFS; `git lfs ls-files` should list both files. `.gitignore` excludes `node_modules/`, private backups, logs, and `.env` files. This public repository includes the dictionary files; verify that you have permission to redistribute them.
+`node_modules/`, logs, `.env`, and personal backups are excluded from Git. The default dictionary path is `dictionary/ldoce5/`; alternatively, set `READING_DICTIONARY_DIR` to a directory containing `LDOCE5++ V 1-35.mdx` and `LDOCE5++ V 1-35.mdd`. The bundled PDF text extractor in `vendor/pdfjs-dist` retains its license file.
 
-The bundled `vendor/pdfjs-dist` is used to extract PDF text, and its license is included in that directory. No open-source license has been selected for this project yet.
+The repository includes Longman dictionary files. Verify redistribution rights before distributing them publicly. No open-source license has been selected for this project yet.
